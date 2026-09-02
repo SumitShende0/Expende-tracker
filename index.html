@@ -12,8 +12,8 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Ledger">
 <meta name="mobile-web-app-capable" content="yes">
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<link crossorigin="anonymous" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script crossorigin="anonymous" src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   :root{
     --bg:#0F1420; --surface:#171E2E; --surface-2:#1F2837;
@@ -353,20 +353,26 @@
   <div class="modal">
     <div class="modal-head"><button class="modal-cancel-btn" data-close="txModalBg">Cancel</button><h2 id="txModalTitle">Add expense</h2><button class="modal-action-btn" id="saveTxBtn">Save</button></div>
     <div class="form-grid">
+      <div class="field" id="txTypeField">
+        <div class="chip-row" id="txTypeRow">
+          <button class="chip-opt sel" data-val="expense">Expense</button>
+          <button class="chip-opt" data-val="income">Income</button>
+        </div>
+      </div>
       <div class="freq-row" id="txFreqRow"></div>
       <div class="field"><label>Amount (₹)</label><input type="number" inputmode="decimal" id="txAmount" placeholder="0.00"></div>
-      <div class="field">
+      <div class="field" id="txCatField">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;"><label style="margin:0;">Category</label><button class="link-btn" id="txManageCatBtn">Manage</button></div>
         <div class="chip-row" id="txCatRow"></div>
       </div>
       <div class="field"><label>Account</label><div class="chip-row" id="txAcctRow"></div></div>
-      <div class="field"><label>Payment mode</label><div class="chip-row" id="txModeRow"></div></div>
+      <div class="field" id="txModeField"><label>Payment mode</label><div class="chip-row" id="txModeRow"></div></div>
       <div class="row2">
         <div class="field"><label>Date</label><input type="date" id="txDate"></div>
-        <div class="field"><label>Note</label><input type="text" id="txNote" placeholder="e.g. Zomato" autocomplete="off"></div>
+        <div class="field"><label id="txNoteLabel">Note</label><input type="text" id="txNote" placeholder="e.g. Zomato" autocomplete="off"></div>
       </div>
       <div class="suggest-box" id="txSuggestBox" style="display:none;"></div>
-      <div class="field">
+      <div class="field" id="txSplitField">
         <label style="display:flex; align-items:center; gap:8px; cursor:pointer; margin-bottom:0;">
           <input type="checkbox" id="txSplitToggle" style="width:auto; accent-color:var(--accent);">
           Split this expense with someone
@@ -617,8 +623,16 @@
   function icoEdit(s){ return `<svg viewBox="0 0 24 24" width="${s}" height="${s}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg>`; }
   function icoCopy(s){ return `<svg viewBox="0 0 24 24" width="${s}" height="${s}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>`; }
   function icoChevronR(s){ return `<svg viewBox="0 0 24 24" width="${s}" height="${s}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>`; }
-  function openModal(id){ document.getElementById(id).classList.add('show'); }
-  function closeModal(id){ document.getElementById(id).classList.remove('show'); }
+  function openModal(id){
+    const wasAnyOpen = document.querySelector('.modal-bg.show');
+    document.getElementById(id).classList.add('show');
+    if(!wasAnyOpen) navPush({modal:true});
+  }
+  function closeModal(id){
+    document.getElementById(id).classList.remove('show');
+    const stillOpen = document.querySelector('.modal-bg.show');
+    if(!stillOpen && history.state && history.state.modal){ navBack(); }
+  }
 
   // ---------- CONFIRM MODAL ----------
   let confirmResolve = null;
@@ -716,8 +730,32 @@
 
   // ---------- NAV ----------
   const views = ['monthly','daily','cards','recurring','split','splitPerson','accountDetail','monthDetail'];
+  const DRILL_VIEWS = ['accountDetail','monthDetail','splitPerson'];
   let currentView = 'monthly';
-  function showView(v){
+
+  // History-backed navigation: drill-down views push a history entry so the
+  // hardware/gesture back button steps back within the app instead of
+  // exiting it. Top-level tabs replace state (no stack growth). Modals push
+  // a single "modal open" entry (collapsed across any stacked/confirm
+  // modals) so back closes them instead of leaving the app.
+  function navPush(state){ history.pushState(state, ''); }
+  function navReplace(state){ history.replaceState(state, ''); }
+  function navBack(){ history.back(); }
+  window.addEventListener('popstate', (e)=>{
+    const st = e.state || {};
+    if(!st.modal){
+      document.querySelectorAll('.modal-bg.show').forEach(bg=> bg.classList.remove('show'));
+    }
+    if(st.view && st.view!==currentView){
+      showView(st.view, true);
+    }
+  });
+
+  function showView(v, fromPopstate){
+    if(!fromPopstate){
+      if(DRILL_VIEWS.includes(v)) navPush({view:v});
+      else navReplace({view:v});
+    }
     currentView = v;
     views.forEach(x=> document.getElementById('view-'+x).classList.toggle('active', x===v));
     let navKey = v;
@@ -726,7 +764,7 @@
     else if(v==='monthDetail') navKey = (monthDetailContext && monthDetailContext.scope.type==='account') ? 'cards' : 'monthly';
     document.querySelectorAll('.navbtn').forEach(b=>b.classList.toggle('active', b.dataset.view===navKey));
     const fabBtn = document.getElementById('fabAdd');
-    fabBtn.title = v==='split' ? 'Add person' : v==='splitPerson' ? 'Add transaction' : 'Add expense';
+    fabBtn.title = v==='split' ? 'Add person' : v==='splitPerson' ? 'Add transaction' : 'Add expense / income';
     if(v==='monthly') renderMonthly();
     if(v==='daily') renderDaily();
     if(v==='cards') renderCards();
@@ -808,6 +846,14 @@
       return true;
     });
   }
+  function applyFiltersIncome(list){
+    return list.filter(i=>{
+      if(filterState.accts.size && !filterState.accts.has(i.accountId)) return false;
+      if(filterState.from && i.date < filterState.from) return false;
+      if(filterState.to && i.date > filterState.to) return false;
+      return true;
+    });
+  }
   document.getElementById('filterToggleBtn').onclick = ()=>{
     const panel = document.getElementById('filterPanel');
     panel.classList.toggle('show');
@@ -833,14 +879,26 @@
 
   // ---------- DAILY ----------
   function txnRowHtml(t){
-    return `<div class="txn" data-id="${t.id}">
+    const isIncome = t._kind==='income';
+    if(isIncome){
+      return `<div class="txn" data-id="${t.id}" data-kind="income">
+        <div class="dot" style="${t.recurringId?'background:var(--amber)':'background:var(--accent)'}"></div>
+        <div class="info">
+          <div class="cat">${escapeHtml(t.name||'Income')}</div>
+          <div class="meta">${escapeHtml(acctName(t.accountId))}</div>
+        </div>
+        <div class="amt" style="color:var(--accent);">+${fmt(t.amount)}</div>
+        <button class="del" data-id="${t.id}" data-kind="income" title="Delete">${icoX(14)}</button>
+      </div>`;
+    }
+    return `<div class="txn" data-id="${t.id}" data-kind="expense">
       <div class="dot" style="${t.recurringId?'background:var(--amber)':''}"></div>
       <div class="info">
         <div class="cat">${escapeHtml(t.category)}${t.note?' · '+escapeHtml(t.note):''}</div>
         <div class="meta">${escapeHtml(acctName(t.accountId))} · ${escapeHtml(t.mode)}</div>
       </div>
       <div class="amt ${t.recurringId?'recurring':''}">-${fmt(t.amount)}</div>
-      <button class="del" data-id="${t.id}" title="Delete">${icoX(14)}</button>
+      <button class="del" data-id="${t.id}" data-kind="expense" title="Delete">${icoX(14)}</button>
     </div>`;
   }
   function wireTxnRows(wrap, onChange){
@@ -853,9 +911,14 @@
     wrap.querySelectorAll('.del').forEach(b=>{
       b.onclick = async (e)=>{
         e.stopPropagation();
-        if(!(await showConfirm('Delete this transaction?'))) return;
-        data.transactions = data.transactions.filter(t=>t.id!==b.dataset.id);
-        data.ious = data.ious.filter(i=>i.linkedTxnId!==b.dataset.id);
+        const isIncome = b.dataset.kind==='income';
+        if(!(await showConfirm(isIncome ? 'Delete this income entry?' : 'Delete this transaction?'))) return;
+        if(isIncome){
+          data.incomes = data.incomes.filter(i=>i.id!==b.dataset.id);
+        } else {
+          data.transactions = data.transactions.filter(t=>t.id!==b.dataset.id);
+          data.ious = data.ious.filter(i=>i.linkedTxnId!==b.dataset.id);
+        }
         save(); renderMonthly(); renderCards();
         if(onChange) onChange();
         toast('Deleted');
@@ -866,35 +929,61 @@
     const wrap = document.getElementById('dailyList');
     const banner = document.getElementById('filterBanner');
     const base = applyFilters(data.transactions);
+    const incomeBase = applyFiltersIncome(data.incomes);
     if(filterActive()){
       const total = base.reduce((s,t)=>s+Number(t.amount),0);
       banner.style.display='flex';
       banner.innerHTML = `<span>${base.length} transaction${base.length===1?'':'s'} matched</span><span class="val">${fmt(total)}</span>`;
     } else { banner.style.display='none'; }
-    if(!base.length){
-      wrap.innerHTML = data.transactions.length ? '<div class="empty"><div class="big">🔍</div><div class="txt">No transactions match these filters.</div></div>' : '<div class="empty"><div class="big">🧾</div><div class="txt">No expenses logged yet.<br>Tap + to add your first one.</div></div>';
+    if(!base.length && !incomeBase.length){
+      wrap.innerHTML = (data.transactions.length || data.incomes.length) ? '<div class="empty"><div class="big">🔍</div><div class="txt">No transactions match these filters.</div></div>' : '<div class="empty"><div class="big">🧾</div><div class="txt">No expenses logged yet.<br>Tap + to add your first one.</div></div>';
       return;
     }
-    const sorted = [...base].sort((a,b)=> b.date.localeCompare(a.date) || 0);
+    const merged = [...base.map(t=>({...t,_kind:'expense'})), ...incomeBase.map(i=>({...i,_kind:'income'}))];
+    const sorted = merged.sort((a,b)=> b.date.localeCompare(a.date) || 0);
     const groups = {};
     sorted.forEach(t=>{ (groups[t.date] = groups[t.date]||[]).push(t); });
     const dates = Object.keys(groups).sort((a,b)=>b.localeCompare(a));
     wrap.innerHTML = dates.map(date=>{
       const items = groups[date];
-      const dayTotal = items.reduce((s,t)=>s+Number(t.amount),0);
+      const dayTotal = items.reduce((s,t)=> s + (t._kind==='income' ? Number(t.amount) : -Number(t.amount)), 0);
       const dObj = new Date(date+'T00:00:00');
       const label = dObj.toLocaleDateString('en-IN',{weekday:'short', day:'numeric', month:'short'});
       const rows = items.map(txnRowHtml).join('');
-      return `<div class="day-group"><div class="day-header"><span>${label}</span><span class="day-total mono">${fmt(dayTotal)}</span></div>${rows}</div>`;
+      return `<div class="day-group"><div class="day-header"><span>${label}</span><span class="day-total mono" style="${dayTotal>=0?'color:var(--accent);':''}">${dayTotal>=0?'+':''}${fmt(dayTotal)}</span></div>${rows}</div>`;
     }).join('');
     wireTxnRows(wrap, renderDaily);
   }
 
   // ---------- TRANSACTION MODAL (ADD/EDIT) ----------
   let txEditId = null;
+  let txType = 'expense';
   let txState = {cat:null, acct:null, mode:MODES[0]};
   let txSplitState = {type:'owed_to_me'};
   let txSplitPersonId = null;
+  function applyTxTypeUI(isEdit){
+    const isIncome = txType==='income';
+    document.querySelectorAll('#txTypeRow .chip-opt').forEach(b=> b.classList.toggle('sel', b.dataset.val===txType));
+    document.getElementById('txTypeField').style.display = isEdit ? 'none' : 'flex';
+    document.getElementById('txModalTitle').textContent = isEdit ? (isIncome?'Edit income':'Edit expense') : (isIncome?'Add income':'Add expense');
+    document.getElementById('txCatField').style.display = isIncome ? 'none' : 'block';
+    document.getElementById('txModeField').style.display = isIncome ? 'none' : 'block';
+    document.getElementById('txSplitField').style.display = isIncome ? 'none' : 'block';
+    document.getElementById('txSplitPanel').style.display = (!isIncome && document.getElementById('txSplitToggle').checked) ? 'flex' : 'none';
+    document.getElementById('txFreqRow').style.display = isIncome ? 'none' : '';
+    document.getElementById('txNoteLabel').textContent = isIncome ? 'Source / Name' : 'Note';
+    document.getElementById('txNote').placeholder = isIncome ? 'e.g. Freelance payment' : 'e.g. Zomato';
+    document.getElementById('deleteTxBtn').textContent = isIncome ? 'Delete income' : 'Delete expense';
+    document.getElementById('txSuggestBox').style.display='none';
+  }
+  document.querySelectorAll('#txTypeRow .chip-opt').forEach(b=>{
+    b.onclick = ()=>{
+      txType = b.dataset.val;
+      if(txType==='income' && !data.accounts.length){ toast('Add an account first'); txType='expense'; return; }
+      applyTxTypeUI(!!txEditId);
+      renderTxAcctRow();
+    };
+  });
   function renderTxSplitPersonRow(){
     const wrap = document.getElementById('txSplitPersonRow');
     if(!data.people.length){
@@ -954,7 +1043,7 @@
   document.getElementById('txNote').addEventListener('input', (e)=>{
     const val = e.target.value.trim().toLowerCase();
     const box = document.getElementById('txSuggestBox');
-    if(val.length<2){ box.style.display='none'; box.innerHTML=''; return; }
+    if(txType!=='expense' || val.length<2){ box.style.display='none'; box.innerHTML=''; return; }
     const seen = new Set(); const matches = [];
     [...data.transactions].reverse().forEach(t=>{
       const note = (t.note||'').trim();
@@ -987,18 +1076,19 @@
   document.querySelectorAll('#txSplitTypeRow .chip-opt').forEach(b=>{
     b.onclick = ()=>{ txSplitState.type=b.dataset.val; document.querySelectorAll('#txSplitTypeRow .chip-opt').forEach(x=>x.classList.toggle('sel',x===b)); };
   });
-  function openTxModal(editId){
+  function openTxModal(editId, forcedType){
     txEditId = editId || null;
     const isEdit = !!editId;
-    document.getElementById('txModalTitle').textContent = isEdit ? 'Edit expense' : 'Add expense';
+    const editExpense = isEdit ? data.transactions.find(x=>x.id===editId) : null;
+    const editIncome = (isEdit && !editExpense) ? data.incomes.find(x=>x.id===editId) : null;
+    if(isEdit && !editExpense && !editIncome) return;
+    txType = isEdit ? (editIncome ? 'income' : 'expense') : (forcedType || 'expense');
     document.getElementById('deleteTxBtn').style.display = isEdit ? 'block' : 'none';
     document.getElementById('saveTxBtn').textContent = isEdit ? 'Update' : 'Save';
-    document.getElementById('txSuggestBox').style.display='none';
     const splitToggle = document.getElementById('txSplitToggle');
     const splitPanel = document.getElementById('txSplitPanel');
-    if(isEdit){
-      const t = data.transactions.find(x=>x.id===editId);
-      if(!t) return;
+    if(editExpense){
+      const t = editExpense;
       document.getElementById('txAmount').value = t.amount;
       document.getElementById('txDate').value = t.date;
       document.getElementById('txNote').value = t.note||'';
@@ -1016,6 +1106,17 @@
         document.getElementById('txSplitAmount').value='';
         txSplitState.type='owed_to_me';
       }
+    } else if(editIncome){
+      const i = editIncome;
+      document.getElementById('txAmount').value = i.amount;
+      document.getElementById('txDate').value = i.date;
+      document.getElementById('txNote').value = i.name||'';
+      txState = {cat: data.categories[0], acct: i.accountId, mode: MODES[0]};
+      document.getElementById('txFreqRow').innerHTML='';
+      splitToggle.checked = false; splitPanel.style.display='none';
+      txSplitPersonId = null;
+      document.getElementById('txSplitAmount').value='';
+      txSplitState.type='owed_to_me';
     } else {
       if(!data.accounts.length){ toast('Add an account first'); return; }
       document.getElementById('txAmount').value='';
@@ -1031,6 +1132,7 @@
     document.querySelectorAll('#txSplitTypeRow .chip-opt').forEach(b=>b.classList.toggle('sel', b.dataset.val===txSplitState.type));
     renderTxSplitPersonRow();
     renderTxCatRow(); renderTxAcctRow(); renderTxModeRow();
+    applyTxTypeUI(isEdit);
     openModal('txModalBg');
   }
   document.getElementById('txManageCatBtn').onclick = ()=> openManageCat(()=> renderTxCatRow());
@@ -1040,6 +1142,23 @@
     if(!txState.acct){ toast('Add an account first'); return; }
     const date = document.getElementById('txDate').value || todayISO();
     const note = document.getElementById('txNote').value.trim();
+
+    if(txType==='income'){
+      let incId;
+      if(txEditId){
+        const i = data.incomes.find(x=>x.id===txEditId);
+        if(i){ i.amount=amount; i.accountId=txState.acct; i.date=date; i.name=note || 'Income'; }
+        incId = txEditId;
+      } else {
+        incId = uid();
+        data.incomes.push({id:incId, amount, name: note || 'Income', accountId:txState.acct, date});
+      }
+      save(); closeModal('txModalBg');
+      toast(txEditId ? 'Income updated' : 'Income added');
+      renderDaily(); renderMonthly(); renderCards();
+      return;
+    }
+
     const splitOn = document.getElementById('txSplitToggle').checked;
     const splitAmount = parseFloat(document.getElementById('txSplitAmount').value);
     if(splitOn && (!txSplitPersonId || !splitAmount || splitAmount<=0)){ toast('Add a person and the split amount'); return; }
@@ -1072,6 +1191,13 @@
   };
   document.getElementById('deleteTxBtn').onclick = async ()=>{
     if(!txEditId) return;
+    if(txType==='income'){
+      if(!(await showConfirm('Delete this income entry?'))) return;
+      data.incomes = data.incomes.filter(i=>i.id!==txEditId);
+      save(); closeModal('txModalBg'); renderDaily(); renderMonthly(); renderCards();
+      toast('Deleted');
+      return;
+    }
     if(!(await showConfirm('Delete this transaction?'))) return;
     data.transactions = data.transactions.filter(t=>t.id!==txEditId);
     data.ious = data.ious.filter(i=>i.linkedTxnId!==txEditId);
@@ -1268,9 +1394,7 @@
     wrap.querySelectorAll('.day-header').forEach(h=> h.addEventListener('click', ()=> openMonthDetail(scope, parseInt(h.dataset.y), parseInt(h.dataset.m))));
     wireTxnRows(wrap, renderAccountDetail);
   }
-  document.getElementById('acctDetailBackBtn').onclick = ()=>{
-    showView(analyticsScope && analyticsScope.type==='account' ? 'cards' : 'monthly');
-  };
+  document.getElementById('acctDetailBackBtn').onclick = ()=> navBack();
   document.getElementById('acctDetailEditBtn').onclick = ()=>{ if(analyticsScope && analyticsScope.type==='account') openAcctModal(analyticsScope.id); };
   document.getElementById('acctChartPrev').onclick = ()=>{ chartOffset += CHART_WINDOW; renderAccountDetail(); };
   document.getElementById('acctChartNext').onclick = ()=>{ if(chartOffset>0){ chartOffset = Math.max(0, chartOffset-CHART_WINDOW); renderAccountDetail(); } };
@@ -1319,7 +1443,7 @@
     }).join('');
     wireTxnRows(wrap, renderMonthDetail);
   }
-  document.getElementById('monthDetailBackBtn').onclick = ()=> showView('accountDetail');
+  document.getElementById('monthDetailBackBtn').onclick = ()=> navBack();
 
   function getCycle(acct, offset){
     const day = acct.cycleDay || 1;
@@ -1431,7 +1555,7 @@
     data.accounts = data.accounts.filter(a=>a.id!==acctEditId);
     if(activeCardId===acctEditId) activeCardId=null;
     save(); closeModal('acctModalBg'); renderCards();
-    if(currentView==='accountDetail' && acctDetailId===acctEditId) showView('cards');
+    if(currentView==='accountDetail' && analyticsScope && analyticsScope.type==='account' && analyticsScope.id===acctEditId) showView('cards');
     toast('Account deleted');
   };
 
@@ -1682,7 +1806,7 @@
       };
     });
   }
-  document.getElementById('personBackBtn').onclick = ()=> showView('split');
+  document.getElementById('personBackBtn').onclick = ()=> navBack();
   document.getElementById('personEditBtn').onclick = ()=> openPersonModal(personDetailId);
   document.getElementById('addPersonTxnBtn').onclick = ()=> openIouModal(null, personDetailId);
   document.getElementById('addPersonBtn').onclick = ()=> openPersonModal(null);
@@ -1895,6 +2019,7 @@
 
   // ---------- EXPORT ----------
   function exportToExcel(){
+    if(typeof XLSX==='undefined'){ toast('Export needs an internet connection (one-time library load)'); return; }
     if(!data.transactions.length && !data.incomes.length && !data.ious.length){ toast('No data to export yet'); return; }
     const wb = XLSX.utils.book_new();
     if(data.transactions.length){
@@ -1925,6 +2050,11 @@
   generateDueRecurring();
   showView('monthly');
 })();
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{
+    navigator.serviceWorker.register('./sw.js').catch(err=> console.warn('SW registration failed:', err));
+  });
+}
 </script>
 </body>
 </html>
