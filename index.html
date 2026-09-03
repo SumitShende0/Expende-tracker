@@ -41,7 +41,7 @@
   ::selection{background:var(--accent); color:#0F1420;}
   button{font-family:inherit; cursor:pointer; border:none; background:none; color:inherit; padding:0; margin:0; appearance:none; -webkit-appearance:none; transition:transform .12s cubic-bezier(.4,0,.2,1), opacity .12s ease, background-color .15s ease;}
   button:active{transform:scale(0.95); opacity:.85;}
-  input,select,textarea{font-family:inherit; color:var(--text); background:rgba(255,255,255,0.055); -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px); border:1px solid var(--glass-border); border-radius:10px; padding:11px 12px; font-size:15px; width:100%; outline:none; color-scheme:dark;}
+  input,select,textarea{font-family:inherit; color:var(--text); background:rgba(255,255,255,0.055); -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px); border:1px solid var(--glass-border); border-radius:10px; padding:11px 12px; font-size:15px; width:100%; min-width:0; outline:none; color-scheme:dark;}
   input:focus,select:focus,textarea:focus{border-color:var(--accent);}
   .mono{font-family:var(--font-mono);}
 
@@ -136,7 +136,8 @@
   .chip-row{display:flex; flex-wrap:wrap; gap:8px;}
   .chip-opt{padding:8px 14px; border-radius:20px; background:rgba(255,255,255,0.055); -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px); border:1px solid var(--glass-border); font-size:13px; color:var(--text-dim); transition:background-color .15s ease, color .15s ease, border-color .15s ease, transform .12s ease;}
   .chip-opt.sel{background:var(--accent); color:#0B1710; border-color:var(--accent); font-weight:600;}
-  .row2{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
+  .row2{display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:12px;}
+  .field{min-width:0;}
   .split-panel{background:rgba(255,255,255,0.045); -webkit-backdrop-filter:blur(12px); backdrop-filter:blur(12px); border:1px solid var(--glass-border); border-radius:12px; padding:14px; flex-direction:column; gap:12px;}
 
   .freq-row{display:flex; gap:8px; overflow-x:auto; padding-bottom:2px;}
@@ -375,7 +376,7 @@
       <div class="field" id="txSplitField">
         <label style="display:flex; align-items:center; gap:8px; cursor:pointer; margin-bottom:0;">
           <input type="checkbox" id="txSplitToggle" style="width:auto; accent-color:var(--accent);">
-          Split this expense with someone
+          <span id="txSplitLabelText">Split this expense with someone</span>
         </label>
       </div>
       <div class="split-panel" id="txSplitPanel" style="display:none;">
@@ -386,7 +387,7 @@
             <button class="chip-opt" data-val="i_owe">I owe them</button>
           </div>
         </div>
-        <div class="field"><label>Their share (₹)</label><input type="number" id="txSplitAmount" placeholder="0.00"></div>
+        <div class="field"><label id="txSplitAmountLabel">Their share (₹)</label><input type="number" id="txSplitAmount" placeholder="0.00"></div>
       </div>
       <button class="btn full" id="deleteTxBtn" style="display:none; color:var(--danger); margin-top:4px;">Delete expense</button>
     </div>
@@ -915,11 +916,13 @@
         if(!(await showConfirm(isIncome ? 'Delete this income entry?' : 'Delete this transaction?'))) return;
         if(isIncome){
           data.incomes = data.incomes.filter(i=>i.id!==b.dataset.id);
+          data.ious = data.ious.filter(i=>i.linkedTxnId!==b.dataset.id);
         } else {
           data.transactions = data.transactions.filter(t=>t.id!==b.dataset.id);
           data.ious = data.ious.filter(i=>i.linkedTxnId!==b.dataset.id);
         }
         save(); renderMonthly(); renderCards();
+        if(currentView==='splitPerson') renderPersonDetail();
         if(onChange) onChange();
         toast('Deleted');
       };
@@ -968,8 +971,9 @@
     document.getElementById('txModalTitle').textContent = isEdit ? (isIncome?'Edit income':'Edit expense') : (isIncome?'Add income':'Add expense');
     document.getElementById('txCatField').style.display = isIncome ? 'none' : 'block';
     document.getElementById('txModeField').style.display = isIncome ? 'none' : 'block';
-    document.getElementById('txSplitField').style.display = isIncome ? 'none' : 'block';
-    document.getElementById('txSplitPanel').style.display = (!isIncome && document.getElementById('txSplitToggle').checked) ? 'flex' : 'none';
+    document.getElementById('txSplitLabelText').textContent = isIncome ? "This is borrowed money — link it to a person" : 'Split this expense with someone';
+    document.getElementById('txSplitAmountLabel').textContent = isIncome ? 'Amount you owe them (₹)' : 'Their share (₹)';
+    document.getElementById('txSplitPanel').style.display = document.getElementById('txSplitToggle').checked ? 'flex' : 'none';
     document.getElementById('txFreqRow').style.display = isIncome ? 'none' : '';
     document.getElementById('txNoteLabel').textContent = isIncome ? 'Source / Name' : 'Note';
     document.getElementById('txNote').placeholder = isIncome ? 'e.g. Freelance payment' : 'e.g. Zomato';
@@ -980,6 +984,10 @@
     b.onclick = ()=>{
       txType = b.dataset.val;
       if(txType==='income' && !data.accounts.length){ toast('Add an account first'); txType='expense'; return; }
+      if(!document.getElementById('txSplitToggle').checked){
+        txSplitState.type = txType==='income' ? 'i_owe' : 'owed_to_me';
+        document.querySelectorAll('#txSplitTypeRow .chip-opt').forEach(x=> x.classList.toggle('sel', x.dataset.val===txSplitState.type));
+      }
       applyTxTypeUI(!!txEditId);
       renderTxAcctRow();
     };
@@ -1072,6 +1080,10 @@
   });
   document.getElementById('txSplitToggle').onchange = (e)=>{
     document.getElementById('txSplitPanel').style.display = e.target.checked ? 'flex' : 'none';
+    if(e.target.checked && txType==='income'){
+      const amtEl = document.getElementById('txSplitAmount');
+      if(!amtEl.value) amtEl.value = document.getElementById('txAmount').value || '';
+    }
   };
   document.querySelectorAll('#txSplitTypeRow .chip-opt').forEach(b=>{
     b.onclick = ()=>{ txSplitState.type=b.dataset.val; document.querySelectorAll('#txSplitTypeRow .chip-opt').forEach(x=>x.classList.toggle('sel',x===b)); };
@@ -1113,10 +1125,18 @@
       document.getElementById('txNote').value = i.name||'';
       txState = {cat: data.categories[0], acct: i.accountId, mode: MODES[0]};
       document.getElementById('txFreqRow').innerHTML='';
-      splitToggle.checked = false; splitPanel.style.display='none';
-      txSplitPersonId = null;
-      document.getElementById('txSplitAmount').value='';
-      txSplitState.type='owed_to_me';
+      const linkedIou = data.ious.find(x=>x.linkedTxnId===editId);
+      if(linkedIou){
+        splitToggle.checked = true; splitPanel.style.display='flex';
+        txSplitPersonId = linkedIou.personId;
+        document.getElementById('txSplitAmount').value = linkedIou.amount;
+        txSplitState.type = linkedIou.type;
+      } else {
+        splitToggle.checked = false; splitPanel.style.display='none';
+        txSplitPersonId = null;
+        document.getElementById('txSplitAmount').value='';
+        txSplitState.type='i_owe';
+      }
     } else {
       if(!data.accounts.length){ toast('Add an account first'); return; }
       document.getElementById('txAmount').value='';
@@ -1127,7 +1147,7 @@
       splitToggle.checked = false; splitPanel.style.display='none';
       txSplitPersonId = null;
       document.getElementById('txSplitAmount').value='';
-      txSplitState.type='owed_to_me';
+      txSplitState.type = txType==='income' ? 'i_owe' : 'owed_to_me';
     }
     document.querySelectorAll('#txSplitTypeRow .chip-opt').forEach(b=>b.classList.toggle('sel', b.dataset.val===txSplitState.type));
     renderTxSplitPersonRow();
@@ -1143,6 +1163,10 @@
     const date = document.getElementById('txDate').value || todayISO();
     const note = document.getElementById('txNote').value.trim();
 
+    const splitOn = document.getElementById('txSplitToggle').checked;
+    const splitAmount = parseFloat(document.getElementById('txSplitAmount').value);
+    if(splitOn && (!txSplitPersonId || !splitAmount || splitAmount<=0)){ toast('Add a person and the amount'); return; }
+
     if(txType==='income'){
       let incId;
       if(txEditId){
@@ -1153,15 +1177,22 @@
         incId = uid();
         data.incomes.push({id:incId, amount, name: note || 'Income', accountId:txState.acct, date});
       }
+      const existingIou = data.ious.find(x=>x.linkedTxnId===incId);
+      if(splitOn){
+        if(existingIou){
+          existingIou.personId=txSplitPersonId; existingIou.type=txSplitState.type; existingIou.amount=splitAmount; existingIou.date=date; existingIou.note = note || 'Borrowed money';
+        } else {
+          data.ious.push({id:uid(), personId:txSplitPersonId, type:txSplitState.type, amount:splitAmount, date, note: note || 'Borrowed money', linkedTxnId:incId, settled:false});
+        }
+      } else if(existingIou){
+        data.ious = data.ious.filter(x=>x.id!==existingIou.id);
+      }
       save(); closeModal('txModalBg');
       toast(txEditId ? 'Income updated' : 'Income added');
       renderDaily(); renderMonthly(); renderCards();
+      if(currentView==='splitPerson') renderPersonDetail();
       return;
     }
-
-    const splitOn = document.getElementById('txSplitToggle').checked;
-    const splitAmount = parseFloat(document.getElementById('txSplitAmount').value);
-    if(splitOn && (!txSplitPersonId || !splitAmount || splitAmount<=0)){ toast('Add a person and the split amount'); return; }
 
     let txId;
     if(txEditId){
@@ -1194,7 +1225,9 @@
     if(txType==='income'){
       if(!(await showConfirm('Delete this income entry?'))) return;
       data.incomes = data.incomes.filter(i=>i.id!==txEditId);
+      data.ious = data.ious.filter(i=>i.linkedTxnId!==txEditId);
       save(); closeModal('txModalBg'); renderDaily(); renderMonthly(); renderCards();
+      if(currentView==='splitPerson') renderPersonDetail();
       toast('Deleted');
       return;
     }
@@ -1743,13 +1776,14 @@
     toast('Marked as settled');
   };
   function personItemHtml(i){
-    const linkedTxn = i.linkedTxnId ? data.transactions.find(t=>t.id===i.linkedTxnId) : null;
+    const linked = findLinkedTxnOrIncome(i.linkedTxnId);
+    const linkedLabel = linked ? (linked.kind==='income' ? `Income · ${linked.item.name||'Income'}` : `${linked.item.category}${linked.item.note?' · '+linked.item.note:''}`) : null;
     return `<div class="iou-item ${i.settled?'settled':''}" data-id="${i.id}">
       <div class="top">
         <div class="sub">${i.type==='owed_to_me'?'Owes you':'You owe'} · ${new Date(i.date+'T00:00:00').toLocaleDateString('en-IN',{day:'numeric',month:'short'})}${i.note?' · '+escapeHtml(i.note):''}</div>
         <div class="amt" style="color:${i.type==='owed_to_me'?'var(--accent)':'var(--danger)'}">${i.type==='owed_to_me'?'+':'-'}${fmt(i.amount)}</div>
       </div>
-      ${linkedTxn ? `<div class="linked">Linked: ${escapeHtml(linkedTxn.category)}${linkedTxn.note?' · '+escapeHtml(linkedTxn.note):''} · ${fmt(linkedTxn.amount)}</div>` : ''}
+      ${linked ? `<div class="linked">Linked: ${escapeHtml(linkedLabel)} · ${fmt(linked.item.amount)}</div>` : ''}
       <div class="actions">
         <button class="btn small" data-settle="${i.id}">${i.settled?'Mark unsettled':'Mark settled'}</button>
         <button class="btn small" data-del-iou="${i.id}" style="color:var(--danger);">Delete</button>
@@ -1869,15 +1903,25 @@
     b.onclick = ()=>{ iouState.type=b.dataset.val; document.querySelectorAll('#iouTypeRow .chip-opt').forEach(x=>x.classList.toggle('sel',x===b)); };
   });
   let iouLinkedTxnId = null;
+  function findLinkedTxnOrIncome(id){
+    if(!id) return null;
+    const t = data.transactions.find(x=>x.id===id);
+    if(t) return {kind:'expense', item:t};
+    const inc = data.incomes.find(x=>x.id===id);
+    if(inc) return {kind:'income', item:inc};
+    return null;
+  }
   function renderIouLinkedChip(){
     const chipWrap = document.getElementById('iouLinkedSelected');
     const searchInput = document.getElementById('iouLinkedSearch');
     const resultsBox = document.getElementById('iouLinkedResults');
-    if(iouLinkedTxnId && !data.transactions.find(t=>t.id===iouLinkedTxnId)) iouLinkedTxnId = null;
-    if(iouLinkedTxnId){
-      const t = data.transactions.find(t=>t.id===iouLinkedTxnId);
+    const linked = findLinkedTxnOrIncome(iouLinkedTxnId);
+    if(iouLinkedTxnId && !linked) iouLinkedTxnId = null;
+    if(linked){
+      const label = linked.kind==='income' ? (linked.item.name||'Income') : linked.item.category;
+      const sub = linked.kind==='expense' && linked.item.note ? ' · '+escapeHtml(linked.item.note) : '';
       chipWrap.style.display = 'block';
-      chipWrap.innerHTML = `<div class="linked-chip"><div class="info"><div>${escapeHtml(t.category)}${t.note?' · '+escapeHtml(t.note):''}</div><div class="meta">${t.date} · ${fmt(t.amount)}</div></div><button id="iouLinkedRemoveBtn">Remove</button></div>`;
+      chipWrap.innerHTML = `<div class="linked-chip"><div class="info"><div>${linked.kind==='income'?'Income · ':''}${escapeHtml(label)}${sub}</div><div class="meta">${linked.item.date} · ${fmt(linked.item.amount)}</div></div><button id="iouLinkedRemoveBtn">Remove</button></div>`;
       document.getElementById('iouLinkedRemoveBtn').onclick = ()=>{ iouLinkedTxnId = null; renderIouLinkedChip(); };
       searchInput.style.display = 'none';
       resultsBox.style.display = 'none';
