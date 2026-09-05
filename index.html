@@ -1069,7 +1069,7 @@
       if(!counts[key]) counts[key] = {count:0, sample:t};
       counts[key].count++; counts[key].sample = t;
     });
-    const top = Object.values(counts).sort((a,b)=>b.count-a.count).filter(x=>x.count>=1).slice(0,5);
+    const top = Object.values(counts).filter(x=>x.count>=2).sort((a,b)=>b.count-a.count).slice(0,5);
     if(!top.length){ wrap.innerHTML=''; return; }
     wrap.innerHTML = top.map(x=>{
       const label = (x.sample.note && x.sample.note.trim()) ? x.sample.note.trim() : x.sample.category;
