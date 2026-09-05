@@ -380,14 +380,9 @@
         </label>
       </div>
       <div class="split-panel" id="txSplitPanel" style="display:none;">
-        <div class="field"><label>Person</label><div class="chip-row" id="txSplitPersonRow"></div></div>
-        <div class="field"><label>Type</label>
-          <div class="chip-row" id="txSplitTypeRow">
-            <button class="chip-opt sel" data-val="owed_to_me">They owe me</button>
-            <button class="chip-opt" data-val="i_owe">I owe them</button>
-          </div>
-        </div>
-        <div class="field"><label id="txSplitAmountLabel">Their share (₹)</label><input type="number" id="txSplitAmount" placeholder="0.00"></div>
+        <div id="txSplitRowsWrap"></div>
+        <div id="txSplitTotalHint" style="font-size:12px;"></div>
+        <button class="btn full" id="txSplitAddRowBtn" style="margin-top:2px;">+ Add another person</button>
       </div>
       <button class="btn full" id="deleteTxBtn" style="display:none; color:var(--danger); margin-top:4px;">Delete expense</button>
     </div>
@@ -962,8 +957,7 @@
   let txEditId = null;
   let txType = 'expense';
   let txState = {cat:null, acct:null, mode:MODES[0]};
-  let txSplitState = {type:'owed_to_me'};
-  let txSplitPersonId = null;
+  let txSplitRows = []; // [{iouId:null|string, personId:null|string, type:'owed_to_me'|'i_owe', amount:string}]
   function applyTxTypeUI(isEdit){
     const isIncome = txType==='income';
     document.querySelectorAll('#txTypeRow .chip-opt').forEach(b=> b.classList.toggle('sel', b.dataset.val===txType));
@@ -971,39 +965,83 @@
     document.getElementById('txModalTitle').textContent = isEdit ? (isIncome?'Edit income':'Edit expense') : (isIncome?'Add income':'Add expense');
     document.getElementById('txCatField').style.display = isIncome ? 'none' : 'block';
     document.getElementById('txModeField').style.display = isIncome ? 'none' : 'block';
-    document.getElementById('txSplitLabelText').textContent = isIncome ? "This is borrowed money — link it to a person" : 'Split this expense with someone';
-    document.getElementById('txSplitAmountLabel').textContent = isIncome ? 'Amount you owe them (₹)' : 'Their share (₹)';
+    document.getElementById('txSplitLabelText').textContent = isIncome ? "This is borrowed money — link it to people" : 'Split this expense with someone';
     document.getElementById('txSplitPanel').style.display = document.getElementById('txSplitToggle').checked ? 'flex' : 'none';
     document.getElementById('txFreqRow').style.display = isIncome ? 'none' : '';
     document.getElementById('txNoteLabel').textContent = isIncome ? 'Source / Name' : 'Note';
     document.getElementById('txNote').placeholder = isIncome ? 'e.g. Freelance payment' : 'e.g. Zomato';
     document.getElementById('deleteTxBtn').textContent = isIncome ? 'Delete income' : 'Delete expense';
     document.getElementById('txSuggestBox').style.display='none';
+    renderTxSplitRows();
   }
   document.querySelectorAll('#txTypeRow .chip-opt').forEach(b=>{
     b.onclick = ()=>{
       txType = b.dataset.val;
       if(txType==='income' && !data.accounts.length){ toast('Add an account first'); txType='expense'; return; }
-      if(!document.getElementById('txSplitToggle').checked){
-        txSplitState.type = txType==='income' ? 'i_owe' : 'owed_to_me';
-        document.querySelectorAll('#txSplitTypeRow .chip-opt').forEach(x=> x.classList.toggle('sel', x.dataset.val===txSplitState.type));
-      }
       applyTxTypeUI(!!txEditId);
       renderTxAcctRow();
     };
   });
-  function renderTxSplitPersonRow(){
-    const wrap = document.getElementById('txSplitPersonRow');
-    if(!data.people.length){
-      wrap.innerHTML = '<span style="font-size:13px;color:var(--text-faint);">No people yet</span> <button class="chip-opt" id="txSplitNewPersonChip">+ New</button>';
-    } else {
-      if(!txSplitPersonId || !data.people.find(p=>p.id===txSplitPersonId)) txSplitPersonId = data.people[0].id;
-      wrap.innerHTML = data.people.map(p=>`<button class="chip-opt ${p.id===txSplitPersonId?'sel':''}" data-p="${p.id}">${escapeHtml(p.name)}</button>`).join('') + `<button class="chip-opt" id="txSplitNewPersonChip">+ New</button>`;
-      wrap.querySelectorAll('[data-p]').forEach(b=> b.onclick=()=>{ txSplitPersonId=b.dataset.p; renderTxSplitPersonRow(); });
-    }
-    const nc = document.getElementById('txSplitNewPersonChip');
-    if(nc) nc.onclick = ()=> openPersonModal(null, (p)=>{ txSplitPersonId=p.id; renderTxSplitPersonRow(); });
+  function renderTxSplitRows(){
+    const wrap = document.getElementById('txSplitRowsWrap');
+    if(!wrap) return;
+    const amtLabel = txType==='income' ? 'Amount they lent (₹)' : 'Their share (₹)';
+    wrap.innerHTML = txSplitRows.map((row,idx)=>{
+      const peopleChips = (data.people.length
+        ? data.people.map(p=>`<button class="chip-opt ${row.personId===p.id?'sel':''}" data-idx="${idx}" data-p="${p.id}">${escapeHtml(p.name)}</button>`).join('')
+        : '<span style="font-size:13px;color:var(--text-faint);">No people yet</span>')
+        + `<button class="chip-opt" data-idx="${idx}" data-newperson="1">+ New</button>`;
+      return `<div class="split-row" data-row="${idx}" style="margin-bottom:14px; padding-bottom:14px; ${idx<txSplitRows.length-1?'border-bottom:1px solid var(--border);':''}">
+        <div class="field"><label>Person</label><div class="chip-row">${peopleChips}</div></div>
+        <div class="field"><label>Type</label>
+          <div class="chip-row">
+            <button class="chip-opt ${row.type==='owed_to_me'?'sel':''}" data-idx="${idx}" data-type="owed_to_me">They owe me</button>
+            <button class="chip-opt ${row.type==='i_owe'?'sel':''}" data-idx="${idx}" data-type="i_owe">I owe them</button>
+          </div>
+        </div>
+        <div class="row2">
+          <div class="field"><label>${amtLabel}</label><input type="number" class="split-amt-input" data-idx="${idx}" value="${escapeHtml(row.amount||'')}" placeholder="0.00"></div>
+          <div class="field" style="display:flex; align-items:flex-end;">${txSplitRows.length>1 ? `<button class="btn full" data-idx="${idx}" data-removerow="1" style="color:var(--danger);">Remove</button>` : ''}</div>
+        </div>
+      </div>`;
+    }).join('');
+    wrap.querySelectorAll('[data-p]').forEach(b=> b.onclick=()=>{
+      txSplitRows[+b.dataset.idx].personId = b.dataset.p; renderTxSplitRows();
+    });
+    wrap.querySelectorAll('[data-newperson]').forEach(b=> b.onclick=()=>{
+      const idx = +b.dataset.idx;
+      openPersonModal(null, (p)=>{ txSplitRows[idx].personId = p.id; renderTxSplitRows(); });
+    });
+    wrap.querySelectorAll('[data-type]').forEach(b=> b.onclick=()=>{
+      txSplitRows[+b.dataset.idx].type = b.dataset.type; renderTxSplitRows();
+    });
+    wrap.querySelectorAll('.split-amt-input').forEach(inp=>{
+      inp.onchange = ()=>{ txSplitRows[+inp.dataset.idx].amount = inp.value; };
+      inp.addEventListener('input', updateSplitTotalHint);
+    });
+    wrap.querySelectorAll('[data-removerow]').forEach(b=> b.onclick=()=>{
+      txSplitRows.splice(+b.dataset.idx,1); renderTxSplitRows();
+    });
+    updateSplitTotalHint();
   }
+  function updateSplitTotalHint(){
+    const hint = document.getElementById('txSplitTotalHint');
+    if(!hint) return;
+    const inputs = document.querySelectorAll('.split-amt-input');
+    if(!inputs.length){ hint.textContent=''; return; }
+    let total = 0;
+    inputs.forEach(inp=> total += parseFloat(inp.value)||0);
+    const txAmt = parseFloat(document.getElementById('txAmount').value) || 0;
+    const over = total > txAmt + 0.01;
+    hint.style.color = over ? 'var(--danger)' : 'var(--text-dim)';
+    hint.textContent = `Split total: ${fmt(total)} / ${fmt(txAmt)}${over ? ' — exceeds total amount' : ''}`;
+  }
+  document.getElementById('txSplitAddRowBtn').onclick = ()=>{
+    const lastType = txSplitRows.length ? txSplitRows[txSplitRows.length-1].type : (txType==='income' ? 'i_owe' : 'owed_to_me');
+    txSplitRows.push({iouId:null, personId:null, type:lastType, amount:''});
+    renderTxSplitRows();
+  };
+  document.getElementById('txAmount').addEventListener('input', updateSplitTotalHint);
 
   function renderTxCatRow(){
     const row = document.getElementById('txCatRow');
@@ -1085,14 +1123,19 @@
   });
   document.getElementById('txSplitToggle').onchange = (e)=>{
     document.getElementById('txSplitPanel').style.display = e.target.checked ? 'flex' : 'none';
-    if(e.target.checked && txType==='income'){
-      const amtEl = document.getElementById('txSplitAmount');
-      if(!amtEl.value) amtEl.value = document.getElementById('txAmount').value || '';
+    if(e.target.checked && !txSplitRows.length){
+      txSplitRows.push({
+        iouId: null,
+        personId: data.people.length ? data.people[0].id : null,
+        type: txType==='income' ? 'i_owe' : 'owed_to_me',
+        amount: txType==='income' ? (document.getElementById('txAmount').value || '') : ''
+      });
+      renderTxSplitRows();
+    }
+    if(!e.target.checked){
+      txSplitRows = [];
     }
   };
-  document.querySelectorAll('#txSplitTypeRow .chip-opt').forEach(b=>{
-    b.onclick = ()=>{ txSplitState.type=b.dataset.val; document.querySelectorAll('#txSplitTypeRow .chip-opt').forEach(x=>x.classList.toggle('sel',x===b)); };
-  });
   function openTxModal(editId, forcedType){
     txEditId = editId || null;
     const isEdit = !!editId;
@@ -1104,6 +1147,16 @@
     document.getElementById('saveTxBtn').textContent = isEdit ? 'Update' : 'Save';
     const splitToggle = document.getElementById('txSplitToggle');
     const splitPanel = document.getElementById('txSplitPanel');
+    function loadSplitRows(id){
+      const linked = id ? data.ious.filter(x=>x.linkedTxnId===id) : [];
+      if(linked.length){
+        txSplitRows = linked.map(iou=>({iouId:iou.id, personId:iou.personId, type:iou.type, amount:String(iou.amount)}));
+        splitToggle.checked = true; splitPanel.style.display='flex';
+      } else {
+        txSplitRows = [];
+        splitToggle.checked = false; splitPanel.style.display='none';
+      }
+    }
     if(editExpense){
       const t = editExpense;
       document.getElementById('txAmount').value = t.amount;
@@ -1111,18 +1164,7 @@
       document.getElementById('txNote').value = t.note||'';
       txState = {cat:t.category, acct:t.accountId, mode: MODES.includes(t.mode)?t.mode:MODES[0]};
       document.getElementById('txFreqRow').innerHTML='';
-      const linkedIou = data.ious.find(i=>i.linkedTxnId===editId);
-      if(linkedIou){
-        splitToggle.checked = true; splitPanel.style.display='flex';
-        txSplitPersonId = linkedIou.personId;
-        document.getElementById('txSplitAmount').value = linkedIou.amount;
-        txSplitState.type = linkedIou.type;
-      } else {
-        splitToggle.checked = false; splitPanel.style.display='none';
-        txSplitPersonId = null;
-        document.getElementById('txSplitAmount').value='';
-        txSplitState.type='owed_to_me';
-      }
+      loadSplitRows(editId);
     } else if(editIncome){
       const i = editIncome;
       document.getElementById('txAmount').value = i.amount;
@@ -1130,18 +1172,7 @@
       document.getElementById('txNote').value = i.name||'';
       txState = {cat: data.categories[0], acct: i.accountId, mode: MODES[0]};
       document.getElementById('txFreqRow').innerHTML='';
-      const linkedIou = data.ious.find(x=>x.linkedTxnId===editId);
-      if(linkedIou){
-        splitToggle.checked = true; splitPanel.style.display='flex';
-        txSplitPersonId = linkedIou.personId;
-        document.getElementById('txSplitAmount').value = linkedIou.amount;
-        txSplitState.type = linkedIou.type;
-      } else {
-        splitToggle.checked = false; splitPanel.style.display='none';
-        txSplitPersonId = null;
-        document.getElementById('txSplitAmount').value='';
-        txSplitState.type='i_owe';
-      }
+      loadSplitRows(editId);
     } else {
       if(!data.accounts.length){ toast('Add an account first'); return; }
       document.getElementById('txAmount').value='';
@@ -1149,13 +1180,8 @@
       document.getElementById('txNote').value='';
       txState = {cat: data.categories[0], acct: data.accounts[0].id, mode: MODES[0]};
       renderFreqRow();
-      splitToggle.checked = false; splitPanel.style.display='none';
-      txSplitPersonId = null;
-      document.getElementById('txSplitAmount').value='';
-      txSplitState.type = txType==='income' ? 'i_owe' : 'owed_to_me';
+      loadSplitRows(null);
     }
-    document.querySelectorAll('#txSplitTypeRow .chip-opt').forEach(b=>b.classList.toggle('sel', b.dataset.val===txSplitState.type));
-    renderTxSplitPersonRow();
     renderTxCatRow(); renderTxAcctRow(); renderTxModeRow();
     applyTxTypeUI(isEdit);
     openModal('txModalBg');
@@ -1169,8 +1195,38 @@
     const note = document.getElementById('txNote').value.trim();
 
     const splitOn = document.getElementById('txSplitToggle').checked;
-    const splitAmount = parseFloat(document.getElementById('txSplitAmount').value);
-    if(splitOn && (!txSplitPersonId || !splitAmount || splitAmount<=0)){ toast('Add a person and the amount'); return; }
+    if(splitOn){
+      if(!txSplitRows.length || txSplitRows.some(r=> !r.personId || !parseFloat(r.amount) || parseFloat(r.amount)<=0)){
+        toast('Add a person and an amount for each split row'); return;
+      }
+      const splitTotal = txSplitRows.reduce((s,r)=> s+parseFloat(r.amount), 0);
+      if(splitTotal > amount + 0.01){
+        toast(`Split amounts (${fmt(splitTotal)}) can't exceed the total (${fmt(amount)})`);
+        return;
+      }
+    }
+    function syncSplitRows(txId, defaultNote){
+      if(!splitOn){
+        data.ious = data.ious.filter(i=>i.linkedTxnId!==txId);
+        return;
+      }
+      const keepIds = new Set();
+      txSplitRows.forEach(row=>{
+        const amt = parseFloat(row.amount);
+        if(row.iouId){
+          const iou = data.ious.find(i=>i.id===row.iouId);
+          if(iou){
+            iou.personId=row.personId; iou.type=row.type; iou.amount=amt; iou.date=date; iou.note=defaultNote;
+            keepIds.add(iou.id);
+            return;
+          }
+        }
+        const newId = uid();
+        data.ious.push({id:newId, personId:row.personId, type:row.type, amount:amt, date, note:defaultNote, linkedTxnId:txId, settled:false});
+        keepIds.add(newId);
+      });
+      data.ious = data.ious.filter(i=> i.linkedTxnId!==txId || keepIds.has(i.id));
+    }
 
     if(txType==='income'){
       let incId;
@@ -1182,16 +1238,7 @@
         incId = uid();
         data.incomes.push({id:incId, amount, name: note || 'Income', accountId:txState.acct, date});
       }
-      const existingIou = data.ious.find(x=>x.linkedTxnId===incId);
-      if(splitOn){
-        if(existingIou){
-          existingIou.personId=txSplitPersonId; existingIou.type=txSplitState.type; existingIou.amount=splitAmount; existingIou.date=date; existingIou.note = note || 'Borrowed money';
-        } else {
-          data.ious.push({id:uid(), personId:txSplitPersonId, type:txSplitState.type, amount:splitAmount, date, note: note || 'Borrowed money', linkedTxnId:incId, settled:false});
-        }
-      } else if(existingIou){
-        data.ious = data.ious.filter(x=>x.id!==existingIou.id);
-      }
+      syncSplitRows(incId, note || 'Borrowed money');
       save(); closeModal('txModalBg');
       toast(txEditId ? 'Income updated' : 'Income added');
       renderDaily(); renderMonthly(); renderCards();
@@ -1209,16 +1256,7 @@
       data.transactions.push({id:txId, amount, category:txState.cat, accountId:txState.acct, mode:txState.mode, note, date});
     }
 
-    const existingIou = data.ious.find(i=>i.linkedTxnId===txId);
-    if(splitOn){
-      if(existingIou){
-        existingIou.personId=txSplitPersonId; existingIou.type=txSplitState.type; existingIou.amount=splitAmount; existingIou.date=date; existingIou.note = note || ('Split: '+txState.cat);
-      } else {
-        data.ious.push({id:uid(), personId:txSplitPersonId, type:txSplitState.type, amount:splitAmount, date, note: note || ('Split: '+txState.cat), linkedTxnId:txId, settled:false});
-      }
-    } else if(existingIou){
-      data.ious = data.ious.filter(i=>i.id!==existingIou.id);
-    }
+    syncSplitRows(txId, note || ('Split: '+txState.cat));
 
     save(); closeModal('txModalBg');
     toast(txEditId ? 'Expense updated' : 'Expense added');
