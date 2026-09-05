@@ -1100,7 +1100,7 @@
       groups[key].count++;
       groups[key].sample = t; // keep most recent sample (transactions are stored in add order)
     });
-    const top = Object.values(groups).sort((a,b)=> b.count-a.count).slice(0,4);
+    const top = Object.values(groups).filter(x=> x.count>=2).sort((a,b)=> b.count-a.count).slice(0,4);
     if(!top.length){ box.style.display='none'; box.innerHTML=''; return; }
     box.style.display='block';
     box.innerHTML = top.map(x=>{
