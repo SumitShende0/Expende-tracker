@@ -27,7 +27,7 @@
   *{box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent;}
   html,body{height:100%;}
   svg{display:block;}
-  body{background:var(--bg); color:var(--text); font-family:var(--font-body); overscroll-behavior-y:none; padding-bottom:160px; min-height:100vh; position:relative;}
+  body{background:var(--bg); color:var(--text); font-family:var(--font-body); overscroll-behavior-y:none; padding-bottom:calc(180px + env(safe-area-inset-bottom)); min-height:100vh; position:relative;}
   .bg-blobs{position:fixed; inset:-15%; z-index:0; pointer-events:none; overflow:hidden;
     background:
       radial-gradient(circle at 15% 12%, rgba(74,222,154,0.2), transparent 36%),
@@ -244,7 +244,8 @@
       <div class="fp-label">Account</div><div class="chip-row" id="filterAcctRow"></div>
       <div class="fp-label">Mode</div><div class="chip-row" id="filterModeRow"></div>
       <div class="fp-label">Date range</div>
-      <div class="row2"><input type="date" id="filterFrom"><input type="date" id="filterTo"></div>
+      <div class="field"><input type="date" id="filterFrom"></div>
+      <div class="field"><input type="date" id="filterTo"></div>
       <button class="btn full" id="filterClearBtn" style="margin-top:12px;">Clear filters</button>
     </div>
     <div class="filter-total-banner" id="filterBanner" style="display:none;"></div>
@@ -320,6 +321,8 @@
     </div>
     <div id="peopleList"></div>
     <button class="btn full" id="addPersonBtn" style="margin-top:4px;">+ Add person</button>
+    <div class="section-label" id="settleAdjustmentsLabel" style="display:none; margin-top:18px;">Rounding differences</div>
+    <div id="settleAdjustmentsWrap"></div>
   </section>
 
   <section class="view" id="view-splitPerson">
@@ -368,10 +371,8 @@
       </div>
       <div class="field"><label>Account</label><div class="chip-row" id="txAcctRow"></div></div>
       <div class="field" id="txModeField"><label>Payment mode</label><div class="chip-row" id="txModeRow"></div></div>
-      <div class="row2">
-        <div class="field"><label>Date</label><input type="date" id="txDate"></div>
-        <div class="field"><label id="txNoteLabel">Note</label><input type="text" id="txNote" placeholder="e.g. Zomato" autocomplete="off"></div>
-      </div>
+      <div class="field"><label>Date</label><input type="date" id="txDate"></div>
+      <div class="field"><label id="txNoteLabel">Note</label><input type="text" id="txNote" placeholder="e.g. Zomato" autocomplete="off"></div>
       <div class="suggest-box" id="txSuggestBox" style="display:none;"></div>
       <div class="field" id="txSplitField">
         <label style="display:flex; align-items:center; gap:8px; cursor:pointer; margin-bottom:0;">
@@ -452,10 +453,8 @@
           <button class="chip-opt" data-val="i_owe">I owe them</button>
         </div>
       </div>
-      <div class="row2">
-        <div class="field"><label>Amount (₹)</label><input type="number" id="iouAmount" placeholder="0.00"></div>
-        <div class="field"><label>Date</label><input type="date" id="iouDate"></div>
-      </div>
+      <div class="field"><label>Amount (₹)</label><input type="number" id="iouAmount" placeholder="0.00"></div>
+      <div class="field"><label>Date</label><input type="date" id="iouDate"></div>
       <div class="field"><label>Note (optional)</label><input type="text" id="iouNote" placeholder="e.g. Dinner split"></div>
       <div class="field">
         <label>Attach to a transaction (optional)</label>
@@ -557,7 +556,9 @@
     <div class="modal-head"><button class="modal-cancel-btn" data-close="settleModalBg">Cancel</button><h2 id="settleModalTitle">Settle up</h2><button class="modal-action-btn" id="settleConfirmBtn">Confirm</button></div>
     <div class="form-grid">
       <div style="font-size:13px; color:var(--text-dim); line-height:1.5;" id="settleModalDesc"></div>
+      <div class="field"><label id="settleAmountLabel">Amount</label><input type="number" id="settleAmount" placeholder="0.00"></div>
       <div class="field"><label id="settleAccountLabel">Account</label><div class="chip-row" id="settleAccountRow"></div></div>
+      <div style="font-size:12px; color:var(--text-faint);" id="settleDiffHint"></div>
     </div>
   </div>
 </div>
@@ -604,6 +605,27 @@
       if(p) i.personId = p.id;
     }
   });
+  // Migrate IOUs that were marked settled before settling created a real
+  // transaction/income entry. Without this, removing the old balance-only
+  // adjustment (replaced by real transactions) would silently change
+  // balances for anyone who settled something before this update.
+  let migratedLegacySettles = false;
+  data.ious.forEach(i=>{
+    if(i.settled && !i.settledTxnId && i.settledAccountId){
+      const amt = Number(i.amount);
+      const dt = i.settledDate || i.date || todayISO();
+      const newId = uid();
+      if(i.type==='owed_to_me'){
+        data.incomes.push({id:newId, amount:amt, name:`Settled: ${personName(i.personId)}`, accountId:i.settledAccountId, date:dt});
+      } else {
+        data.transactions.push({id:newId, amount:amt, category:'Other', accountId:i.settledAccountId, mode:'Other', note:`Settled: ${personName(i.personId)}`, date:dt});
+      }
+      i.settledTxnId = newId;
+      i.settledAmount = amt;
+      migratedLegacySettles = true;
+    }
+  });
+  if(migratedLegacySettles) save();
 
   function save(){ localStorage.setItem(STORE_KEY, JSON.stringify(data)); }
   function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
@@ -718,9 +740,6 @@
     data.incomes.filter(i=>i.accountId===acct.id).forEach(i=> bal += Number(i.amount));
     data.transactions.filter(t=>t.accountId===acct.id).forEach(t=> bal -= Number(t.amount));
     Object.values(data.cycles).forEach(c=>{ if(c.fromAccountId===acct.id) bal -= Number(c.amount); });
-    data.ious.filter(i=>i.settled && i.settledAccountId===acct.id).forEach(i=>{
-      bal += i.type==='owed_to_me' ? Number(i.amount) : -Number(i.amount);
-    });
     return bal;
   }
 
@@ -1779,6 +1798,35 @@
     wrap.querySelectorAll('[data-person]').forEach(el=>{
       el.onclick = ()=>{ personDetailId = el.dataset.person; personShowSettled = false; showView('splitPerson'); };
     });
+    renderSettleAdjustments();
+  }
+  function renderSettleAdjustments(){
+    const label = document.getElementById('settleAdjustmentsLabel');
+    const wrap = document.getElementById('settleAdjustmentsWrap');
+    const diffs = data.ious.filter(i=> i.settled && !i.diffAcknowledged && i.settledAmount!=null && Math.abs(i.settledAmount-i.amount)>=0.01);
+    if(!diffs.length){ label.style.display='none'; wrap.innerHTML=''; return; }
+    label.style.display='block';
+    diffs.sort((a,b)=> (b.settledDate||'').localeCompare(a.settledDate||''));
+    wrap.innerHTML = diffs.map(i=>{
+      const diff = i.amount - i.settledAmount;
+      const short = diff>0;
+      return `<div class="rec-item" data-diffid="${i.id}">
+        <div>
+          <div class="name">${escapeHtml(personName(i.personId))}</div>
+          <div class="meta">Settled for ${fmt(i.settledAmount)} of ${fmt(i.amount)} owed${i.settledDate?' · '+new Date(i.settledDate+'T00:00:00').toLocaleDateString('en-IN',{day:'numeric',month:'short'}):''}</div>
+        </div>
+        <div class="row-end">
+          <div class="amt mono" style="color:${short?'var(--danger)':'var(--accent)'}; font-size:13px;">${short?'-':'+'}${fmt(Math.abs(diff))}</div>
+          <button class="link-btn" data-ackdiff="${i.id}" style="font-size:12px;">Dismiss</button>
+        </div>
+      </div>`;
+    }).join('');
+    wrap.querySelectorAll('[data-ackdiff]').forEach(b=>{
+      b.onclick = ()=>{
+        const iou = data.ious.find(x=>x.id===b.dataset.ackdiff);
+        if(iou){ iou.diffAcknowledged = true; save(); renderSettleAdjustments(); }
+      };
+    });
   }
 
   let personShowSettled = false;
@@ -1789,9 +1837,23 @@
     settleIouId = iouId;
     const isReceive = i.type==='owed_to_me';
     document.getElementById('settleModalDesc').textContent = isReceive
-      ? `${personName(i.personId)} paid you back ${fmt(i.amount)}. Which account did it go into?`
-      : `You paid ${personName(i.personId)} back ${fmt(i.amount)}. Which account did it come from?`;
+      ? `${personName(i.personId)} owed you ${fmt(i.amount)}. How much did they actually pay back, and into which account?`
+      : `You owed ${personName(i.personId)} ${fmt(i.amount)}. How much did you actually pay back, and from which account?`;
+    document.getElementById('settleAmountLabel').textContent = isReceive ? 'Amount received (₹)' : 'Amount paid (₹)';
     document.getElementById('settleAccountLabel').textContent = isReceive ? 'Add to account' : 'Pay from account';
+    const amtEl = document.getElementById('settleAmount');
+    amtEl.value = i.amount;
+    const hint = document.getElementById('settleDiffHint');
+    hint.textContent = '';
+    amtEl.oninput = ()=>{
+      const entered = parseFloat(amtEl.value);
+      if(!entered || Math.abs(entered-i.amount)<0.01){ hint.textContent=''; return; }
+      const diff = i.amount - entered;
+      hint.style.color = 'var(--amber)';
+      hint.textContent = diff>0
+        ? `${fmt(diff)} less than owed — this will be recorded as fully settled anyway.`
+        : `${fmt(-diff)} more than owed — the extra will be recorded too.`;
+    };
     const bankAccts = data.accounts.filter(a=>a.type!=='credit');
     const row = document.getElementById('settleAccountRow');
     if(!bankAccts.length){
@@ -1810,11 +1872,26 @@
     if(!i) return;
     const accId = document.getElementById('settleAccountRow').dataset.selected;
     if(!accId){ toast('Add a bank account first'); return; }
+    const amount = parseFloat(document.getElementById('settleAmount').value);
+    if(!amount || amount<=0){ toast('Enter a valid amount'); return; }
+    const isReceive = i.type==='owed_to_me';
+    const today = todayISO();
+    let settleTxnId;
+    if(isReceive){
+      settleTxnId = uid();
+      data.incomes.push({id:settleTxnId, amount, name:`Settled: ${personName(i.personId)}`, accountId:accId, date:today});
+    } else {
+      settleTxnId = uid();
+      data.transactions.push({id:settleTxnId, amount, category:'Other', accountId:accId, mode:'Other', note:`Settled: ${personName(i.personId)}`, date:today});
+    }
     i.settled = true;
     i.settledAccountId = accId;
-    i.settledDate = todayISO();
+    i.settledDate = today;
+    i.settledAmount = amount;
+    i.settledTxnId = settleTxnId;
+    i.diffAcknowledged = false;
     save(); closeModal('settleModalBg');
-    renderSplit(); renderCards();
+    renderSplit(); renderCards(); renderDaily(); renderMonthly();
     if(currentView==='splitPerson') renderPersonDetail();
     toast('Marked as settled');
   };
@@ -1869,7 +1946,14 @@
       b.onclick = (e)=>{
         e.stopPropagation();
         const i=data.ious.find(x=>x.id===b.dataset.settle);
-        if(i.settled){ i.settled=false; save(); renderPersonDetail(); renderSplit(); renderCards(); }
+        if(i.settled){
+          if(i.settledTxnId){
+            if(i.type==='owed_to_me') data.incomes = data.incomes.filter(x=>x.id!==i.settledTxnId);
+            else data.transactions = data.transactions.filter(x=>x.id!==i.settledTxnId);
+          }
+          i.settled=false; i.settledTxnId=null;
+          save(); renderPersonDetail(); renderSplit(); renderCards(); renderDaily(); renderMonthly();
+        }
         else { openSettleModal(i.id); }
       };
     });
