@@ -1001,7 +1001,7 @@
   let txEditId = null;
   let txType = 'expense';
   let txState = {cat:null, acct:null, mode:MODES[0]};
-  let txSplitRows = []; // [{iouId:null|string, personId:null|string, type:'owed_to_me'|'i_owe', amount:string}]
+  let txSplitRows = []; // [{iouId:null|string, personId:null|string, type:'owed_to_me'|'i_owe', amount:string, settled:boolean}]
   function applyTxTypeUI(isEdit){
     const isIncome = txType==='income';
     document.querySelectorAll('#txTypeRow .chip-opt').forEach(b=> b.classList.toggle('sel', b.dataset.val===txType));
@@ -1047,6 +1047,10 @@
           <div class="field"><label>${amtLabel}</label><input type="number" class="split-amt-input" data-idx="${idx}" value="${escapeHtml(row.amount||'')}" placeholder="0.00"></div>
           <div class="field" style="display:flex; align-items:flex-end;">${txSplitRows.length>1 ? `<button class="btn full" data-idx="${idx}" data-removerow="1" style="color:var(--danger);">Remove</button>` : ''}</div>
         </div>
+        <label style="display:flex; align-items:center; gap:8px; margin-top:2px; cursor:pointer;">
+          <input type="checkbox" class="split-settled-cb" data-idx="${idx}" ${row.settled?'checked':''} style="width:auto; accent-color:var(--accent);">
+          <span style="font-size:12.5px; color:var(--text-dim);">Already paid/received in full — don't track as a pending balance</span>
+        </label>
       </div>`;
     }).join('');
     wrap.querySelectorAll('[data-p]').forEach(b=> b.onclick=()=>{
@@ -1065,6 +1069,9 @@
     });
     wrap.querySelectorAll('[data-removerow]').forEach(b=> b.onclick=()=>{
       txSplitRows.splice(+b.dataset.idx,1); renderTxSplitRows();
+    });
+    wrap.querySelectorAll('.split-settled-cb').forEach(cb=>{
+      cb.onchange = ()=>{ txSplitRows[+cb.dataset.idx].settled = cb.checked; };
     });
     updateSplitTotalHint();
   }
@@ -1172,7 +1179,8 @@
         iouId: null,
         personId: data.people.length ? data.people[0].id : null,
         type: txType==='income' ? 'i_owe' : 'owed_to_me',
-        amount: txType==='income' ? (document.getElementById('txAmount').value || '') : ''
+        amount: txType==='income' ? (document.getElementById('txAmount').value || '') : '',
+        settled: false
       });
       renderTxSplitRows();
     }
@@ -1194,7 +1202,7 @@
     function loadSplitRows(id){
       const linked = id ? data.ious.filter(x=>x.linkedTxnId===id) : [];
       if(linked.length){
-        txSplitRows = linked.map(iou=>({iouId:iou.id, personId:iou.personId, type:iou.type, amount:String(iou.amount)}));
+        txSplitRows = linked.map(iou=>({iouId:iou.id, personId:iou.personId, type:iou.type, amount:String(iou.amount), settled: !!(iou.settled && !iou.settledTxnId)}));
         splitToggle.checked = true; splitPanel.style.display='flex';
       } else {
         txSplitRows = [];
@@ -1255,18 +1263,27 @@
         return;
       }
       const keepIds = new Set();
+      const iouCategory = txType==='income' ? null : txState.cat;
       txSplitRows.forEach(row=>{
         const amt = parseFloat(row.amount);
+        const isSettled = !!row.settled;
         if(row.iouId){
           const iou = data.ious.find(i=>i.id===row.iouId);
           if(iou){
-            iou.personId=row.personId; iou.type=row.type; iou.amount=amt; iou.date=date; iou.note=defaultNote;
+            iou.personId=row.personId; iou.type=row.type; iou.amount=amt; iou.date=date; iou.note=defaultNote; iou.category=iouCategory;
+            if(isSettled){
+              iou.settled=true; iou.settledTxnId=null; iou.settledAccountId=txState.acct; iou.settledDate=date; iou.settledAmount=amt; iou.diffAcknowledged=true;
+            } else if(iou.settled && !iou.settledTxnId){
+              iou.settled=false; iou.settledAccountId=null; iou.settledDate=null; iou.settledAmount=null;
+            }
             keepIds.add(iou.id);
             return;
           }
         }
         const newId = uid();
-        data.ious.push({id:newId, personId:row.personId, type:row.type, amount:amt, date, note:defaultNote, linkedTxnId:txId, settled:false});
+        const iouObj = {id:newId, personId:row.personId, type:row.type, amount:amt, date, note:defaultNote, linkedTxnId:txId, category:iouCategory, settled:isSettled};
+        if(isSettled){ iouObj.settledTxnId=null; iouObj.settledAccountId=txState.acct; iouObj.settledDate=date; iouObj.settledAmount=amt; iouObj.diffAcknowledged=true; }
+        data.ious.push(iouObj);
         keepIds.add(newId);
       });
       data.ious = data.ious.filter(i=> i.linkedTxnId!==txId || keepIds.has(i.id));
