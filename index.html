@@ -27,7 +27,7 @@
   *{box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent;}
   html,body{height:100%; max-width:100%; overflow-x:hidden;}
   svg{display:block;}
-  body{background:var(--bg); color:var(--text); font-family:var(--font-body); overscroll-behavior-y:none; padding-bottom:calc(220px + env(safe-area-inset-bottom)); min-height:100vh; position:relative;}
+  body{background:var(--bg); color:var(--text); font-family:var(--font-body); overscroll-behavior-y:none; padding-bottom:24px; min-height:100vh; position:relative;}
   .bg-blobs{position:fixed; inset:-15%; z-index:0; pointer-events:none; overflow:hidden;
     background:
       radial-gradient(circle at 15% 12%, rgba(74,222,154,0.2), transparent 36%),
@@ -53,7 +53,7 @@
   .icon-btn{width:38px; height:38px; border-radius:10px; background:rgba(255,255,255,0.06); -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px); border:1px solid var(--glass-border); display:flex; align-items:center; justify-content:center; font-size:16px;}
   .topbar-actions{display:flex; gap:8px;}
 
-  main{padding:calc(78px + env(safe-area-inset-top)) 20px calc(140px + env(safe-area-inset-bottom)); max-width:520px; margin:0 auto;}
+  main{padding:calc(78px + env(safe-area-inset-top)) 20px calc(170px + env(safe-area-inset-bottom)); max-width:520px; margin:0 auto;}
   .view{display:none; animation:fade .25s ease;}
   .view.active{display:block;}
   @keyframes fade{from{opacity:0; transform:translateY(6px);} to{opacity:1; transform:translateY(0);}}
@@ -168,6 +168,7 @@
   .iou-stat .val{font-family:var(--font-display); font-size:19px; font-weight:700; margin-top:4px;}
   .iou-item{background:var(--glass-bg); -webkit-backdrop-filter:blur(16px) saturate(160%); backdrop-filter:blur(16px) saturate(160%); border:1px solid var(--glass-border); border-radius:14px; padding:14px 16px; margin-bottom:10px; box-shadow:0 6px 16px rgba(0,0,0,.18);}
   .iou-item.settled{opacity:.5;}
+  .iou-item.iou-locked{opacity:.45;}
   .iou-item .top{display:flex; justify-content:space-between; align-items:flex-start; gap:10px;}
   .iou-item .person{font-weight:600; font-size:14.5px;}
   .iou-item .sub{font-size:12px; color:var(--text-faint); margin-top:2px;}
@@ -265,6 +266,7 @@
       <div class="cycle-panel">
         <div class="cnav"><button id="cPrev"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg></button><div class="range" id="cRange">—</div><button id="cNext"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg></button></div>
         <div class="amt-row"><div class="val mono" id="cAmt">₹0</div><span class="badge" id="cBadge">—</span></div>
+        <div class="field" id="cPayAmountWrap" style="margin-bottom:10px;"><label style="font-size:12px;color:var(--text-dim);display:block;margin-bottom:6px;">Amount actually paid</label><input type="number" id="cPayAmount" placeholder="0.00"></div>
         <div class="field" id="cPayFromWrap" style="margin-bottom:10px;"><label style="font-size:12px;color:var(--text-dim);display:block;margin-bottom:6px;">Pay from</label><select id="cPayFrom"></select></div>
         <button class="btn full" id="cPayBtn">Mark as paid</button>
         <button class="link-btn" id="cViewAllBtn" style="width:100%; text-align:center; padding:12px 0 2px; font-size:13px;">View all transactions →</button>
@@ -337,6 +339,13 @@
     </div>
     <div class="iou-hero">
       <div class="iou-stat" style="flex:1;"><div class="lbl">Balance</div><div class="val mono" id="personNetVal">₹0</div></div>
+    </div>
+    <div style="display:flex; justify-content:flex-end; margin:2px 0 8px;">
+      <button class="link-btn" id="personSelectToggleBtn" style="font-size:13px;">Select</button>
+    </div>
+    <div class="split-panel" id="bulkSettleBar" style="display:none; flex-direction:row; align-items:center; justify-content:space-between; margin-bottom:10px;">
+      <div style="font-size:13px; color:var(--text-dim);" id="bulkSettleLabel">0 selected</div>
+      <button class="btn primary" id="bulkSettleBtn" style="width:auto; padding:8px 16px; font-size:13px;" disabled>Settle together</button>
     </div>
     <div id="personTxnList"></div>
     <button class="btn full" id="addPersonTxnBtn" style="margin-top:4px;">+ Add transaction</button>
@@ -456,6 +465,10 @@
           <button class="chip-opt sel" data-val="owed_to_me">They owe me</button>
           <button class="chip-opt" data-val="i_owe">I owe them</button>
         </div>
+      </div>
+      <div class="field" id="iouCatField">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;"><label style="margin:0;">Category</label><button class="link-btn" id="iouManageCatBtn">Manage</button></div>
+        <div class="chip-row" id="iouCatRow"></div>
       </div>
       <div class="field"><label>Amount (₹)</label><input type="number" id="iouAmount" placeholder="0.00"></div>
       <div class="field"><label>Date</label><input type="date" id="iouDate"></div>
@@ -607,6 +620,14 @@
       let p = nm ? data.people.find(pp=>pp.name.toLowerCase()===nm.toLowerCase()) : null;
       if(!p && nm){ p = {id:uid(), name:nm}; data.people.push(p); }
       if(p) i.personId = p.id;
+    }
+  });
+  // Migrate IOUs saved before per-entry categories existed: infer from a
+  // linked transaction's category where possible, otherwise default to 'Other'.
+  data.ious.forEach(i=>{
+    if(!i.category){
+      const linkedTxn = i.linkedTxnId ? data.transactions.find(t=>t.id===i.linkedTxnId) : null;
+      i.category = (linkedTxn && linkedTxn.category) || 'Other';
     }
   });
   // Migrate IOUs that were marked settled before settling created a real
@@ -788,7 +809,7 @@
     if(v==='daily') renderDaily();
     if(v==='cards') renderCards();
     if(v==='recurring') renderRecurring();
-    if(v==='split') renderSplit();
+    if(v==='split'){ personSelectMode=false; personSelectedIds.clear(); renderSplit(); }
     if(v==='splitPerson') renderPersonDetail();
     if(v==='accountDetail') renderAccountDetail();
     if(v==='monthDetail') renderMonthDetail();
@@ -1573,10 +1594,14 @@
     else if(isPast){ badge.textContent='Due'; badge.className='badge due'; }
     else { badge.textContent='Ongoing'; badge.className='badge'; }
 
+    const payAmountEl = document.getElementById('cPayAmount');
+    payAmountEl.value = paid ? cycleData.amount : total;
+    payAmountEl.disabled = paid;
     const payFromSelect = document.getElementById('cPayFrom');
     const bankAccts = data.accounts.filter(a=>a.type!=='credit');
     payFromSelect.innerHTML = bankAccts.map(a=>`<option value="${a.id}">${escapeHtml(a.name)} (${fmt(getBalance(a))})</option>`).join('');
     document.getElementById('cPayFromWrap').style.display = bankAccts.length ? 'block' : 'none';
+    document.getElementById('cPayAmountWrap').style.display = bankAccts.length ? 'block' : 'none';
     if(paid && cycleData.fromAccountId) payFromSelect.value = cycleData.fromAccountId;
     payFromSelect.disabled = paid || !bankAccts.length;
 
@@ -1586,8 +1611,11 @@
       if(paid){ delete data.cycles[cycleKey]; }
       else {
         if(!bankAccts.length){ toast('Add a bank account first'); return; }
-        data.cycles[cycleKey] = {paidDate: todayISO(), fromAccountId: payFromSelect.value, amount: total};
-        toast('Bill paid — deducted from bank balance');
+        const paidAmount = parseFloat(payAmountEl.value);
+        if(!paidAmount || paidAmount<=0){ toast('Enter a valid amount'); return; }
+        data.cycles[cycleKey] = {paidDate: todayISO(), fromAccountId: payFromSelect.value, amount: paidAmount, statementAmount: total};
+        const savedMsg = paidAmount < total ? ` — saved ${fmt(total-paidAmount)}` : (paidAmount > total ? ` — ${fmt(paidAmount-total)} extra` : '');
+        toast('Bill paid — deducted from bank balance'+savedMsg);
       }
       save(); renderCyclePanel(); renderCards();
     };
@@ -1767,7 +1795,7 @@
 
   // ---------- PEOPLE / SPLIT / IOU ----------
   let iouEditId = null;
-  let iouState = {type:'owed_to_me', personId:null};
+  let iouState = {type:'owed_to_me', personId:null, category:null};
   let iouForcedPersonId = null;
   let personDetailId = null;
   let personEditId = null;
@@ -1834,29 +1862,56 @@
   }
 
   let personShowSettled = false;
-  let settleIouId = null;
-  function openSettleModal(iouId){
-    const i = data.ious.find(x=>x.id===iouId);
-    if(!i) return;
-    settleIouId = iouId;
-    const isReceive = i.type==='owed_to_me';
-    document.getElementById('settleModalDesc').textContent = isReceive
-      ? `${personName(i.personId)} owed you ${fmt(i.amount)}. How much did they actually pay back, and into which account?`
-      : `You owed ${personName(i.personId)} ${fmt(i.amount)}. How much did you actually pay back, and from which account?`;
+  let settleIouIds = [];
+  function distributeSettlement(list, totalPaid){
+    const totalOwed = list.reduce((s,i)=>s+Number(i.amount),0);
+    if(Math.abs(totalPaid-totalOwed)<0.005){
+      return list.map(i=>({id:i.id, settledAmount:Number(i.amount)}));
+    }
+    let allocated = 0;
+    return list.map((i,idx)=>{
+      if(idx===list.length-1){
+        return {id:i.id, settledAmount: Math.round((totalPaid-allocated)*100)/100};
+      }
+      const share = Math.round((Number(i.amount)/totalOwed)*totalPaid*100)/100;
+      allocated += share;
+      return {id:i.id, settledAmount: share};
+    });
+  }
+  function openSettleModal(ids){
+    const list = ids.map(id=>data.ious.find(x=>x.id===id)).filter(Boolean);
+    if(!list.length) return;
+    settleIouIds = list.map(i=>i.id);
+    const isReceive = list[0].type==='owed_to_me';
+    const personId = list[0].personId;
+    const total = list.reduce((s,i)=>s+Number(i.amount),0);
+    document.getElementById('settleModalDesc').textContent = list.length>1
+      ? (isReceive
+          ? `${personName(personId)} owes you ${fmt(total)} across ${list.length} entries. How much did they actually pay back, and into which account?`
+          : `You owe ${personName(personId)} ${fmt(total)} across ${list.length} entries. How much did you actually pay back, and from which account?`)
+      : (isReceive
+          ? `${personName(personId)} owed you ${fmt(total)}. How much did they actually pay back, and into which account?`
+          : `You owed ${personName(personId)} ${fmt(total)}. How much did you actually pay back, and from which account?`);
     document.getElementById('settleAmountLabel').textContent = isReceive ? 'Amount received (₹)' : 'Amount paid (₹)';
     document.getElementById('settleAccountLabel').textContent = isReceive ? 'Add to account' : 'Pay from account';
     const amtEl = document.getElementById('settleAmount');
-    amtEl.value = i.amount;
+    amtEl.value = total;
     const hint = document.getElementById('settleDiffHint');
     hint.textContent = '';
     amtEl.oninput = ()=>{
       const entered = parseFloat(amtEl.value);
-      if(!entered || Math.abs(entered-i.amount)<0.01){ hint.textContent=''; return; }
-      const diff = i.amount - entered;
+      if(!entered || Math.abs(entered-total)<0.01){ hint.textContent=''; return; }
+      const diff = total - entered;
       hint.style.color = 'var(--amber)';
-      hint.textContent = diff>0
-        ? `${fmt(diff)} less than owed — this will be recorded as fully settled anyway.`
-        : `${fmt(-diff)} more than owed — the extra will be recorded too.`;
+      if(list.length>1){
+        hint.textContent = diff>0
+          ? `${fmt(diff)} less than owed — split proportionally across the ${list.length} entries and recorded as fully settled.`
+          : `${fmt(-diff)} more than owed — the extra will be split across the entries too.`;
+      } else {
+        hint.textContent = diff>0
+          ? `${fmt(diff)} less than owed — this will be recorded as fully settled anyway.`
+          : `${fmt(-diff)} more than owed — the extra will be recorded too.`;
+      }
     };
     const bankAccts = data.accounts.filter(a=>a.type!=='credit');
     const row = document.getElementById('settleAccountRow');
@@ -1864,7 +1919,7 @@
       row.innerHTML = '<span style="font-size:13px;color:var(--text-faint);">No bank/cash accounts — add one first</span>';
       row.dataset.selected = '';
     } else {
-      const sel = (i.settledAccountId && bankAccts.find(a=>a.id===i.settledAccountId)) ? i.settledAccountId : bankAccts[0].id;
+      const sel = (list.length===1 && list[0].settledAccountId && bankAccts.find(a=>a.id===list[0].settledAccountId)) ? list[0].settledAccountId : bankAccts[0].id;
       row.dataset.selected = sel;
       row.innerHTML = bankAccts.map(a=>`<button class="chip-opt ${a.id===sel?'sel':''}" data-a="${a.id}">${escapeHtml(a.name)}</button>`).join('');
       row.querySelectorAll('button').forEach(b=> b.onclick=()=>{ row.dataset.selected=b.dataset.a; row.querySelectorAll('button').forEach(x=>x.classList.toggle('sel',x===b)); });
@@ -1872,39 +1927,51 @@
     openModal('settleModalBg');
   }
   document.getElementById('settleConfirmBtn').onclick = ()=>{
-    const i = data.ious.find(x=>x.id===settleIouId);
-    if(!i) return;
+    const list = settleIouIds.map(id=>data.ious.find(x=>x.id===id)).filter(Boolean);
+    if(!list.length) return;
     const accId = document.getElementById('settleAccountRow').dataset.selected;
     if(!accId){ toast('Add a bank account first'); return; }
     const amount = parseFloat(document.getElementById('settleAmount').value);
     if(!amount || amount<=0){ toast('Enter a valid amount'); return; }
-    const isReceive = i.type==='owed_to_me';
+    const isReceive = list[0].type==='owed_to_me';
+    const personId = list[0].personId;
     const today = todayISO();
-    let settleTxnId;
+    const settleTxnId = uid();
     if(isReceive){
-      settleTxnId = uid();
-      data.incomes.push({id:settleTxnId, amount, name:`Settled: ${personName(i.personId)}`, accountId:accId, date:today});
+      data.incomes.push({id:settleTxnId, amount, name:`Settled: ${personName(personId)}`, accountId:accId, date:today});
     } else {
-      settleTxnId = uid();
-      data.transactions.push({id:settleTxnId, amount, category:'Other', accountId:accId, mode:'Other', note:`Settled: ${personName(i.personId)}`, date:today});
+      data.transactions.push({id:settleTxnId, amount, category:'Other', accountId:accId, mode:'Other', note:`Settled: ${personName(personId)}`, date:today});
     }
-    i.settled = true;
-    i.settledAccountId = accId;
-    i.settledDate = today;
-    i.settledAmount = amount;
-    i.settledTxnId = settleTxnId;
-    i.diffAcknowledged = false;
+    const dist = distributeSettlement(list, amount);
+    dist.forEach(d=>{
+      const i = data.ious.find(x=>x.id===d.id);
+      if(!i) return;
+      i.settled = true;
+      i.settledAccountId = accId;
+      i.settledDate = today;
+      i.settledAmount = d.settledAmount;
+      i.settledTxnId = settleTxnId;
+      i.diffAcknowledged = false;
+    });
     save(); closeModal('settleModalBg');
+    personSelectMode = false; personSelectedIds.clear();
     renderSplit(); renderCards(); renderDaily(); renderMonthly();
     if(currentView==='splitPerson') renderPersonDetail();
-    toast('Marked as settled');
+    toast(list.length>1 ? `Settled ${list.length} entries together` : 'Marked as settled');
   };
-  function personItemHtml(i){
+  function personItemHtml(i, selectCtx){
+
     const linked = findLinkedTxnOrIncome(i.linkedTxnId);
     const linkedLabel = linked ? (linked.kind==='income' ? `Income · ${linked.item.name||'Income'}` : `${linked.item.category}${linked.item.note?' · '+linked.item.note:''}`) : null;
-    return `<div class="iou-item ${i.settled?'settled':''}" data-id="${i.id}">
+    const showCheckbox = selectCtx && selectCtx.mode && !i.settled;
+    const lockedOut = showCheckbox && selectCtx.lockType && selectCtx.lockType!==i.type;
+    const checked = showCheckbox && selectCtx.selected.has(i.id);
+    const checkboxHtml = showCheckbox ? `<input type="checkbox" class="iou-select-cb" data-select-iou="${i.id}" ${checked?'checked':''} ${lockedOut?'disabled':''} style="width:19px; height:19px; margin-right:2px; flex-shrink:0; ${lockedOut?'opacity:.35;':''}">` : '';
+    return `<div class="iou-item ${i.settled?'settled':''} ${lockedOut?'iou-locked':''}" data-id="${i.id}" style="${showCheckbox?'display:flex; align-items:flex-start; gap:10px;':''}">
+      ${checkboxHtml}
+      <div style="flex:1; min-width:0;">
       <div class="top">
-        <div class="sub">${i.type==='owed_to_me'?'Owes you':'You owe'} · ${new Date(i.date+'T00:00:00').toLocaleDateString('en-IN',{day:'numeric',month:'short'})}${i.note?' · '+escapeHtml(i.note):''}</div>
+        <div class="sub">${i.type==='owed_to_me'?'Owes you':'You owe'} · ${new Date(i.date+'T00:00:00').toLocaleDateString('en-IN',{day:'numeric',month:'short'})}${i.category?' · '+escapeHtml(i.category):''}${i.note?' · '+escapeHtml(i.note):''}</div>
         <div class="amt" style="color:${i.type==='owed_to_me'?'var(--accent)':'var(--danger)'}">${i.type==='owed_to_me'?'+':'-'}${fmt(i.amount)}</div>
       </div>
       ${linked ? `<div class="linked">Linked: ${escapeHtml(linkedLabel)} · ${fmt(linked.item.amount)}</div>` : ''}
@@ -1912,7 +1979,28 @@
         <button class="btn small" data-settle="${i.id}">${i.settled?'Mark unsettled':'Mark settled'}</button>
         <button class="btn small" data-del-iou="${i.id}" style="color:var(--danger);">Delete</button>
       </div>
+      </div>
     </div>`;
+  }
+  let personSelectMode = false;
+  let personSelectedIds = new Set();
+  function currentSelectLockType(){
+    if(!personSelectedIds.size) return null;
+    const first = data.ious.find(x=>personSelectedIds.has(x.id));
+    return first ? first.type : null;
+  }
+  function renderBulkSettleBar(){
+    const bar = document.getElementById('bulkSettleBar');
+    const label = document.getElementById('bulkSettleLabel');
+    const btn = document.getElementById('bulkSettleBtn');
+    if(!personSelectMode || !personSelectedIds.size){ bar.style.display='none'; return; }
+    bar.style.display='flex';
+    const selected = [...personSelectedIds].map(id=>data.ious.find(x=>x.id===id)).filter(Boolean);
+    const total = selected.reduce((s,i)=>s+Number(i.amount),0);
+    label.textContent = `${selected.length} selected · ${fmt(total)}`;
+    btn.disabled = selected.length<2;
+    btn.style.opacity = selected.length<2 ? '.4' : '1';
+    btn.title = selected.length<2 ? 'Select 2 or more entries to settle together' : '';
   }
   function renderPersonDetail(){
     const p = data.people.find(x=>x.id===personDetailId);
@@ -1923,26 +2011,47 @@
     const netEl = document.getElementById('personNetVal');
     netEl.textContent = (net>0?'+':net<0?'-':'') + fmt(Math.abs(net));
     netEl.style.color = net>0 ? 'var(--accent)' : net<0 ? 'var(--danger)' : 'var(--text)';
+    // Drop selections for IOUs that no longer exist or became settled
+    personSelectedIds.forEach(id=>{ const i=items.find(x=>x.id===id); if(!i || i.settled) personSelectedIds.delete(id); });
+    const selectToggleBtn = document.getElementById('personSelectToggleBtn');
+    const pendingCount = items.filter(i=>!i.settled).length;
+    selectToggleBtn.style.display = pendingCount>=2 ? 'inline-block' : 'none';
+    selectToggleBtn.textContent = personSelectMode ? 'Cancel' : 'Select';
     const wrap = document.getElementById('personTxnList');
-    if(!items.length){ wrap.innerHTML = '<div class="empty"><div class="big">🧾</div><div class="txt">No transactions with '+escapeHtml(p.name)+' yet.</div></div>'; return; }
+    if(!items.length){ wrap.innerHTML = '<div class="empty"><div class="big">🧾</div><div class="txt">No transactions with '+escapeHtml(p.name)+' yet.</div></div>'; renderBulkSettleBar(); return; }
+    const selectCtx = {mode:personSelectMode, selected:personSelectedIds, lockType:currentSelectLockType()};
     const pending = items.filter(i=>!i.settled).sort((a,b)=> b.date.localeCompare(a.date));
     const settled = items.filter(i=>i.settled).sort((a,b)=> b.date.localeCompare(a.date));
     let html = '';
     if(pending.length){
-      html += pending.map(personItemHtml).join('');
+      html += pending.map(i=>personItemHtml(i, selectCtx)).join('');
     } else {
       html += '<div class="empty" style="padding:24px 10px;"><div class="big">✅</div><div class="txt">All settled up with '+escapeHtml(p.name)+'.</div></div>';
     }
     if(settled.length){
       html += `<button class="link-btn" id="toggleSettledBtn" style="width:100%; text-align:center; padding:14px 0 8px; font-size:13px;">${personShowSettled ? 'Hide' : 'Show'} settled history (${settled.length}) ${personShowSettled ? '▲' : '▼'}</button>`;
-      if(personShowSettled){ html += settled.map(personItemHtml).join(''); }
+      if(personShowSettled){ html += settled.map(i=>personItemHtml(i, selectCtx)).join(''); }
     }
     wrap.innerHTML = html;
+    renderBulkSettleBar();
     const toggleBtn = document.getElementById('toggleSettledBtn');
     if(toggleBtn){ toggleBtn.onclick = ()=>{ personShowSettled = !personShowSettled; renderPersonDetail(); }; }
+    wrap.querySelectorAll('.iou-select-cb').forEach(cb=>{
+      cb.addEventListener('click', e=> e.stopPropagation());
+      cb.addEventListener('change', (e)=>{
+        const id = cb.dataset.selectIou;
+        if(cb.checked) personSelectedIds.add(id); else personSelectedIds.delete(id);
+        renderPersonDetail();
+      });
+    });
     wrap.querySelectorAll('.iou-item').forEach(el=>{
       el.addEventListener('click',(e)=>{
-        if(e.target.closest('[data-settle]') || e.target.closest('[data-del-iou]')) return;
+        if(e.target.closest('[data-settle]') || e.target.closest('[data-del-iou]') || e.target.closest('.iou-select-cb')) return;
+        if(personSelectMode){
+          const cb = el.querySelector('.iou-select-cb');
+          if(cb && !cb.disabled){ cb.checked = !cb.checked; cb.dispatchEvent(new Event('change')); }
+          return;
+        }
         openIouModal(el.dataset.id);
       });
     });
@@ -1958,7 +2067,7 @@
           i.settled=false; i.settledTxnId=null;
           save(); renderPersonDetail(); renderSplit(); renderCards(); renderDaily(); renderMonthly();
         }
-        else { openSettleModal(i.id); }
+        else { openSettleModal([i.id]); }
       };
     });
     wrap.querySelectorAll('[data-del-iou]').forEach(b=>{
@@ -1966,11 +2075,21 @@
         e.stopPropagation();
         if(!(await showConfirm('Delete this entry?'))) return;
         data.ious = data.ious.filter(x=>x.id!==b.dataset.delIou);
+        personSelectedIds.delete(b.dataset.delIou);
         save(); renderPersonDetail(); renderSplit(); renderCards();
         toast('Deleted');
       };
     });
   }
+  document.getElementById('personSelectToggleBtn').onclick = ()=>{
+    personSelectMode = !personSelectMode;
+    if(!personSelectMode) personSelectedIds.clear();
+    renderPersonDetail();
+  };
+  document.getElementById('bulkSettleBtn').onclick = ()=>{
+    if(personSelectedIds.size<2) return;
+    openSettleModal([...personSelectedIds]);
+  };
   document.getElementById('personBackBtn').onclick = ()=> navBack();
   document.getElementById('personEditBtn').onclick = ()=> openPersonModal(personDetailId);
   document.getElementById('addPersonTxnBtn').onclick = ()=> openIouModal(null, personDetailId);
@@ -2033,6 +2152,14 @@
   document.querySelectorAll('#iouTypeRow .chip-opt').forEach(b=>{
     b.onclick = ()=>{ iouState.type=b.dataset.val; document.querySelectorAll('#iouTypeRow .chip-opt').forEach(x=>x.classList.toggle('sel',x===b)); };
   });
+  function renderIouCatRow(selected){
+    if(!data.categories || !data.categories.length) data.categories = [...DEFAULT_CATEGORIES];
+    iouState.category = (selected && data.categories.includes(selected)) ? selected : data.categories[0];
+    const row = document.getElementById('iouCatRow');
+    row.innerHTML = data.categories.map(c=>`<button class="chip-opt ${c===iouState.category?'sel':''}" data-cat="${escapeHtml(c)}">${escapeHtml(c)}</button>`).join('');
+    row.querySelectorAll('button').forEach(b=> b.onclick=()=>{ iouState.category=b.dataset.cat; row.querySelectorAll('button').forEach(x=>x.classList.toggle('sel',x===b)); });
+  }
+  document.getElementById('iouManageCatBtn').onclick = ()=> openModal('manageCatModalBg');
   let iouLinkedTxnId = null;
   function findLinkedTxnOrIncome(id){
     if(!id) return null;
@@ -2097,11 +2224,13 @@
     document.getElementById('deleteIouBtn').style.display = isEdit ? 'block' : 'none';
     document.getElementById('saveIouBtn').textContent = isEdit ? 'Update' : 'Save';
     let presetPersonId = null;
+    let presetCategory = null;
     if(isEdit){
       const i = data.ious.find(x=>x.id===editId);
       if(!i) return;
       iouState.type = i.type;
       presetPersonId = i.personId;
+      presetCategory = i.category || null;
       document.getElementById('iouAmount').value = i.amount;
       document.getElementById('iouDate').value = i.date;
       document.getElementById('iouNote').value = i.note||'';
@@ -2109,6 +2238,7 @@
     } else {
       iouState.type='owed_to_me';
       presetPersonId = iouForcedPersonId || (data.people[0] && data.people[0].id) || null;
+      presetCategory = null;
       document.getElementById('iouAmount').value='';
       document.getElementById('iouDate').value = todayISO();
       document.getElementById('iouNote').value='';
@@ -2119,6 +2249,7 @@
     renderIouLinkedChip();
     document.querySelectorAll('#iouTypeRow .chip-opt').forEach(b=>b.classList.toggle('sel', b.dataset.val===iouState.type));
     renderIouPersonRow(presetPersonId);
+    renderIouCatRow(presetCategory);
     openModal('iouModalBg');
   }
   document.getElementById('saveIouBtn').onclick = ()=>{
@@ -2128,12 +2259,13 @@
     const linkedTxnId = iouLinkedTxnId;
     if(!iouState.personId){ toast('Add a person first'); return; }
     if(!amount || amount<=0){ toast('Enter a valid amount'); return; }
+    const category = iouState.category || (data.categories && data.categories[0]) || 'Other';
     if(iouEditId){
       const i = data.ious.find(x=>x.id===iouEditId);
-      if(i){ i.personId=iouState.personId; i.type=iouState.type; i.amount=amount; i.date=date; i.note=note; i.linkedTxnId=linkedTxnId; }
+      if(i){ i.personId=iouState.personId; i.type=iouState.type; i.amount=amount; i.date=date; i.note=note; i.linkedTxnId=linkedTxnId; i.category=category; }
       toast('Updated');
     } else {
-      data.ious.push({id:uid(), personId:iouState.personId, type:iouState.type, amount, date, note, linkedTxnId, settled:false});
+      data.ious.push({id:uid(), personId:iouState.personId, type:iouState.type, amount, date, note, linkedTxnId, category, settled:false});
       toast('Saved');
     }
     save(); closeModal('iouModalBg'); renderSplit();
@@ -2212,9 +2344,9 @@
       XLSX.utils.book_append_sheet(wb, iws, 'Income');
     }
     if(data.ious.length){
-      const srows = [...data.ious].sort((a,b)=>a.date.localeCompare(b.date)).map(i=>({ Date:i.date, Person:personName(i.personId), Type: i.type==='owed_to_me'?'Owed to me':'I owe', 'Amount (₹)':Number(i.amount), Settled: i.settled?'Yes':'No', Note:i.note||'' }));
+      const srows = [...data.ious].sort((a,b)=>a.date.localeCompare(b.date)).map(i=>({ Date:i.date, Person:personName(i.personId), Type: i.type==='owed_to_me'?'Owed to me':'I owe', Category:i.category||'', 'Amount (₹)':Number(i.amount), Settled: i.settled?'Yes':'No', Note:i.note||'' }));
       const sws = XLSX.utils.json_to_sheet(srows);
-      sws['!cols'] = [{wch:12},{wch:16},{wch:14},{wch:12},{wch:10},{wch:24}];
+      sws['!cols'] = [{wch:12},{wch:16},{wch:14},{wch:14},{wch:12},{wch:10},{wch:24}];
       XLSX.utils.book_append_sheet(wb, sws, 'Split & IOU');
     }
     XLSX.writeFile(wb, 'ledger-export-'+todayISO()+'.xlsx');
