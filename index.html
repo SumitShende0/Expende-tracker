@@ -245,6 +245,7 @@
     <div class="section-label" style="margin-top:14px">Daily ledger</div>
     <button class="filter-toggle-btn" id="filterToggleBtn">⚙ Filter</button>
     <div class="filter-panel" id="filterPanel">
+      <div class="fp-label">Type</div><div class="chip-row" id="filterTypeRow"></div>
       <div class="fp-label">Category</div><div class="chip-row" id="filterCatRow"></div>
       <div class="fp-label">Account</div><div class="chip-row" id="filterAcctRow"></div>
       <div class="fp-label">Mode</div><div class="chip-row" id="filterModeRow"></div>
@@ -873,11 +874,12 @@
   }
 
   // ---------- FILTERS (Daily view) ----------
-  let filterState = {cats:new Set(), accts:new Set(), modes:new Set(), from:'', to:''};
+  let filterState = {types:new Set(), cats:new Set(), accts:new Set(), modes:new Set(), from:'', to:''};
   function toggleSetVal(set,val){ if(set.has(val)) set.delete(val); else set.add(val); }
-  function filterActive(){ return filterState.cats.size||filterState.accts.size||filterState.modes.size||filterState.from||filterState.to; }
+  function filterActive(){ return filterState.types.size||filterState.cats.size||filterState.accts.size||filterState.modes.size||filterState.from||filterState.to; }
   function applyFilters(list){
     return list.filter(t=>{
+      if(filterState.types.size && !filterState.types.has('expense')) return false;
       if(filterState.cats.size && !filterState.cats.has(t.category)) return false;
       if(filterState.accts.size && !filterState.accts.has(t.accountId)) return false;
       if(filterState.modes.size && !filterState.modes.has(t.mode)) return false;
@@ -888,6 +890,8 @@
   }
   function applyFiltersIncome(list){
     return list.filter(i=>{
+      if(filterState.types.size && !filterState.types.has('income')) return false;
+      if(filterState.cats.size) return false;
       if(filterState.accts.size && !filterState.accts.has(i.accountId)) return false;
       if(filterState.from && i.date < filterState.from) return false;
       if(filterState.to && i.date > filterState.to) return false;
@@ -901,6 +905,9 @@
     if(panel.classList.contains('show')) renderFilterPanel();
   };
   function renderFilterPanel(){
+    const typeRow=document.getElementById('filterTypeRow');
+    typeRow.innerHTML = [['expense','Expense'],['income','Income']].map(([v,l])=>`<button class="chip-opt ${filterState.types.has(v)?'sel':''}" data-t="${v}">${l}</button>`).join('');
+    typeRow.querySelectorAll('button').forEach(b=> b.onclick=()=>{ toggleSetVal(filterState.types,b.dataset.t); renderFilterPanel(); renderDaily(); });
     const catRow=document.getElementById('filterCatRow');
     catRow.innerHTML = data.categories.map(c=>`<button class="chip-opt ${filterState.cats.has(c)?'sel':''}" data-c="${escapeHtml(c)}">${escapeHtml(c)}</button>`).join('');
     catRow.querySelectorAll('button').forEach(b=> b.onclick=()=>{ toggleSetVal(filterState.cats,b.dataset.c); renderFilterPanel(); renderDaily(); });
@@ -915,7 +922,7 @@
   }
   document.getElementById('filterFrom').onchange = (e)=>{ filterState.from=e.target.value; renderDaily(); };
   document.getElementById('filterTo').onchange = (e)=>{ filterState.to=e.target.value; renderDaily(); };
-  document.getElementById('filterClearBtn').onclick = ()=>{ filterState={cats:new Set(),accts:new Set(),modes:new Set(),from:'',to:''}; renderFilterPanel(); renderDaily(); };
+  document.getElementById('filterClearBtn').onclick = ()=>{ filterState={types:new Set(),cats:new Set(),accts:new Set(),modes:new Set(),from:'',to:''}; renderFilterPanel(); renderDaily(); };
 
   // ---------- DAILY ----------
   function txnRowHtml(t){
