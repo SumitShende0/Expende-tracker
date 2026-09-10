@@ -2312,18 +2312,34 @@
       el.textContent = 'Last backed up ' + d.toLocaleDateString('en-IN',{day:'numeric',month:'short'}) + ' at ' + d.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
     } else { el.textContent = 'Never backed up yet'; }
   }
-  document.getElementById('downloadBackupBtn').onclick = ()=>{
+  document.getElementById('downloadBackupBtn').onclick = async ()=>{
     data.lastBackupAt = new Date().toISOString();
     save();
     const payload = JSON.stringify(data, null, 2);
+    const fileName = 'ledger-backup.json';
+    if(window.showSaveFilePicker){
+      // Chromium-based browsers: lets the user pick and truly overwrite the same file on disk.
+      try{
+        const handle = await window.showSaveFilePicker({ suggestedName: fileName, types: [{description:'JSON', accept:{'application/json':['.json']}}] });
+        const writable = await handle.createWritable();
+        await writable.write(payload);
+        await writable.close();
+        renderLastBackupLabel();
+        toast('Backup saved');
+        return;
+      }catch(err){
+        if(err && err.name==='AbortError') return; // user cancelled the picker
+        // fall through to plain download on any other error
+      }
+    }
     const blob = new Blob([payload], {type:'application/json'});
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = 'ledger-backup.json';
+    a.href = url; a.download = fileName;
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     URL.revokeObjectURL(url);
     renderLastBackupLabel();
-    toast('Backup file downloaded — save it, replacing the old one');
+    toast('Downloaded — your browser may save it as "ledger-backup (1).json" if one already exists; delete the older copy to avoid duplicates');
   };
   document.getElementById('restoreFileInput').onchange = (e)=>{
     const file = e.target.files[0];
