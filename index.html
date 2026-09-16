@@ -341,6 +341,14 @@
     <div class="iou-hero">
       <div class="iou-stat" style="flex:1;"><div class="lbl">Balance</div><div class="val mono" id="personNetVal">₹0</div></div>
     </div>
+    <div style="display:none; align-items:center; justify-content:space-between; margin:-8px 0 10px; font-size:12.5px; color:var(--text-faint);" id="personRoundingRow">
+      <span id="personRoundingText"></span>
+      <button class="link-btn" id="personRoundingClearBtn" style="font-size:12px;">Clear</button>
+    </div>
+    <div class="split-panel" id="netSettleBanner" style="display:none; flex-direction:row; align-items:center; justify-content:space-between; margin-bottom:10px;">
+      <div style="font-size:13px; color:var(--text-dim); flex:1; padding-right:10px;" id="netSettleBannerText"></div>
+      <button class="btn primary" id="netSettleBtn" style="width:auto; padding:8px 16px; font-size:13px; flex-shrink:0;">Clear balance</button>
+    </div>
     <div style="display:flex; justify-content:flex-end; margin:2px 0 8px;">
       <button class="link-btn" id="personSelectToggleBtn" style="font-size:13px;">Select</button>
     </div>
@@ -581,6 +589,19 @@
   </div>
 </div>
 
+<!-- Net Settle Modal: clears both directions with one person at once -->
+<div class="modal-bg" id="netSettleModalBg">
+  <div class="modal" style="border-radius:22px; max-width:440px; margin:0 auto;">
+    <div class="modal-head"><button class="modal-cancel-btn" data-close="netSettleModalBg">Cancel</button><h2>Clear balance</h2><button class="modal-action-btn" id="netSettleConfirmBtn">Confirm</button></div>
+    <div class="form-grid">
+      <div style="font-size:13px; color:var(--text-dim); line-height:1.5;" id="netSettleModalDesc"></div>
+      <div class="field" id="netSettleAmountField"><label id="netSettleAmountLabel">Amount</label><input type="number" id="netSettleAmount" placeholder="0.00"></div>
+      <div class="field" id="netSettleAccountField"><label id="netSettleAccountLabel">Account</label><div class="chip-row" id="netSettleAccountRow"></div></div>
+      <div style="font-size:12px; color:var(--text-faint);" id="netSettleDiffHint"></div>
+    </div>
+  </div>
+</div>
+
 <!-- Generic Confirm Modal -->
 <div class="modal-bg" id="confirmModalBg">
   <div class="modal" style="border-radius:22px; max-width:440px; margin:0 auto; padding-bottom:calc(20px + env(safe-area-inset-bottom));">
@@ -612,6 +633,7 @@
   if(!data.incomes) data.incomes = [];
   if(!data.ious) data.ious = [];
   if(!data.people) data.people = [];
+  data.people.forEach(p=>{ if(typeof p.roundingBalance!=='number') p.roundingBalance = 0; });
   if(!data.categories || !data.categories.length) data.categories = [...DEFAULT_CATEGORIES];
   data.recurring.forEach(r=>{ if(!r.type) r.type='expense'; });
   data.accounts.forEach(a=>{ if(typeof a.startingBalance!=='number') a.startingBalance = 0; });
@@ -637,7 +659,7 @@
   // balances for anyone who settled something before this update.
   let migratedLegacySettles = false;
   data.ious.forEach(i=>{
-    if(i.settled && !i.settledTxnId && i.settledAccountId){
+    if(i.settled && !i.settledTxnId && i.settledAccountId && !i.noSettleTxn){
       const amt = Number(i.amount);
       const dt = i.settledDate || i.date || todayISO();
       const newId = uid();
@@ -1279,9 +1301,9 @@
           if(iou){
             iou.personId=row.personId; iou.type=row.type; iou.amount=amt; iou.date=date; iou.note=defaultNote; iou.category=iouCategory;
             if(isSettled){
-              iou.settled=true; iou.settledTxnId=null; iou.settledAccountId=txState.acct; iou.settledDate=date; iou.settledAmount=amt; iou.diffAcknowledged=true;
+              iou.settled=true; iou.settledTxnId=null; iou.settledAccountId=txState.acct; iou.settledDate=date; iou.settledAmount=amt; iou.diffAcknowledged=true; iou.noSettleTxn=true;
             } else if(iou.settled && !iou.settledTxnId){
-              iou.settled=false; iou.settledAccountId=null; iou.settledDate=null; iou.settledAmount=null;
+              iou.settled=false; iou.settledAccountId=null; iou.settledDate=null; iou.settledAmount=null; iou.noSettleTxn=false;
             }
             keepIds.add(iou.id);
             return;
@@ -1289,7 +1311,7 @@
         }
         const newId = uid();
         const iouObj = {id:newId, personId:row.personId, type:row.type, amount:amt, date, note:defaultNote, linkedTxnId:txId, category:iouCategory, settled:isSettled};
-        if(isSettled){ iouObj.settledTxnId=null; iouObj.settledAccountId=txState.acct; iouObj.settledDate=date; iouObj.settledAmount=amt; iouObj.diffAcknowledged=true; }
+        if(isSettled){ iouObj.settledTxnId=null; iouObj.settledAccountId=txState.acct; iouObj.settledDate=date; iouObj.settledAmount=amt; iouObj.diffAcknowledged=true; iouObj.noSettleTxn=true; }
         data.ious.push(iouObj);
         keepIds.add(newId);
       });
@@ -1887,6 +1909,16 @@
 
   let personShowSettled = false;
   let settleIouIds = [];
+  // expectedSigned/actualSigned: positive = money conceptually owed to/flowing toward the user,
+  // negative = owed by/flowing away from the user. Keeps one running net rounding balance per
+  // person across all settle flows (single, bulk, net) instead of tracking it per entry.
+  function applyRoundingDiff(personId, expectedSigned, actualSigned){
+    const diff = expectedSigned - actualSigned;
+    if(Math.abs(diff) < 0.01) return;
+    const p = data.people.find(x=>x.id===personId);
+    if(!p) return;
+    p.roundingBalance = Math.round(((p.roundingBalance||0) + diff)*100)/100;
+  }
   function distributeSettlement(list, totalPaid){
     const totalOwed = list.reduce((s,i)=>s+Number(i.amount),0);
     if(Math.abs(totalPaid-totalOwed)<0.005){
@@ -1909,17 +1941,28 @@
     const isReceive = list[0].type==='owed_to_me';
     const personId = list[0].personId;
     const total = list.reduce((s,i)=>s+Number(i.amount),0);
-    document.getElementById('settleModalDesc').textContent = list.length>1
+    const person = data.people.find(x=>x.id===personId);
+    const roundingBal = (person && person.roundingBalance) || 0;
+    let suggested = total;
+    let roundingNote = '';
+    if(list.length>1 && Math.abs(roundingBal)>=0.01){
+      const combined = (isReceive?total:-total) + roundingBal;
+      if((isReceive && combined>=0) || (!isReceive && combined<=0)){
+        suggested = Math.abs(combined);
+        roundingNote = ` This also folds in a ${fmt(Math.abs(roundingBal))} rounding balance carried from earlier (${roundingBal>0?'they owed you extra':'you owed them extra'}).`;
+      }
+    }
+    document.getElementById('settleModalDesc').textContent = (list.length>1
       ? (isReceive
           ? `${personName(personId)} owes you ${fmt(total)} across ${list.length} entries. How much did they actually pay back, and into which account?`
           : `You owe ${personName(personId)} ${fmt(total)} across ${list.length} entries. How much did you actually pay back, and from which account?`)
       : (isReceive
           ? `${personName(personId)} owed you ${fmt(total)}. How much did they actually pay back, and into which account?`
-          : `You owed ${personName(personId)} ${fmt(total)}. How much did you actually pay back, and from which account?`);
+          : `You owed ${personName(personId)} ${fmt(total)}. How much did you actually pay back, and from which account?`)) + roundingNote;
     document.getElementById('settleAmountLabel').textContent = isReceive ? 'Amount received (₹)' : 'Amount paid (₹)';
     document.getElementById('settleAccountLabel').textContent = isReceive ? 'Add to account' : 'Pay from account';
     const amtEl = document.getElementById('settleAmount');
-    amtEl.value = total;
+    amtEl.value = suggested;
     const hint = document.getElementById('settleDiffHint');
     hint.textContent = '';
     amtEl.oninput = ()=>{
@@ -1977,13 +2020,128 @@
       i.settledTxnId = settleTxnId;
       i.diffAcknowledged = false;
     });
+    const totalOwed = list.reduce((s,i)=>s+Number(i.amount),0);
+    applyRoundingDiff(personId, isReceive?totalOwed:-totalOwed, isReceive?amount:-amount);
     save(); closeModal('settleModalBg');
     personSelectMode = false; personSelectedIds.clear();
     renderSplit(); renderCards(); renderDaily(); renderMonthly();
     if(currentView==='splitPerson') renderPersonDetail();
     toast(list.length>1 ? `Settled ${list.length} entries together` : 'Marked as settled');
   };
+  function openNetSettleModal(personId){
+    const items = data.ious.filter(i=>i.personId===personId && !i.settled);
+    const owed = items.filter(i=>i.type==='owed_to_me');
+    const iowe = items.filter(i=>i.type==='i_owe');
+    if(!owed.length || !iowe.length) return;
+    const sumOwed = owed.reduce((s,i)=>s+Number(i.amount),0);
+    const sumIOwe = iowe.reduce((s,i)=>s+Number(i.amount),0);
+    const rawNet = sumOwed - sumIOwe;
+    const person = data.people.find(x=>x.id===personId);
+    const roundingBal = (person && person.roundingBalance) || 0;
+    const net = Math.round((rawNet + roundingBal)*100)/100;
+    const absNet = Math.abs(net);
+    const isReceive = net>0;
+    const roundingNote = Math.abs(roundingBal)>=0.01 ? ` This also folds in a ${fmt(Math.abs(roundingBal))} rounding balance carried from earlier (${roundingBal>0?'they owed you extra':'you owed them extra'}).` : '';
+    const desc = document.getElementById('netSettleModalDesc');
+    const amtField = document.getElementById('netSettleAmountField');
+    const acctField = document.getElementById('netSettleAccountField');
+    const hint = document.getElementById('netSettleDiffHint');
+    hint.textContent = '';
+    if(net===0){
+      desc.textContent = `${personName(personId)} owes you ${fmt(sumOwed)} and you owe them ${fmt(sumIOwe)} — these cancel out exactly.${roundingNote} Confirm to clear both balances with no money changing hands.`;
+      amtField.style.display = 'none';
+      acctField.style.display = 'none';
+    } else {
+      desc.textContent = (isReceive
+        ? `${personName(personId)} owes you ${fmt(sumOwed)} and you owe them ${fmt(sumIOwe)} — nets to them paying you ${fmt(absNet)}. How much did they actually pay, and into which account?`
+        : `${personName(personId)} owes you ${fmt(sumOwed)} and you owe them ${fmt(sumIOwe)} — nets to you paying them ${fmt(absNet)}. How much did you actually pay, and from which account?`) + roundingNote;
+      amtField.style.display = 'block';
+      acctField.style.display = 'block';
+      document.getElementById('netSettleAmountLabel').textContent = isReceive ? 'Amount received (₹)' : 'Amount paid (₹)';
+      document.getElementById('netSettleAccountLabel').textContent = isReceive ? 'Add to account' : 'Pay from account';
+      const amtEl = document.getElementById('netSettleAmount');
+      amtEl.value = absNet;
+      amtEl.oninput = ()=>{
+        const entered = parseFloat(amtEl.value);
+        if(!entered || Math.abs(entered-absNet)<0.01){ hint.textContent=''; return; }
+        const diff = absNet - entered;
+        hint.style.color = 'var(--amber)';
+        hint.textContent = diff>0
+          ? `${fmt(diff)} less than the net amount — recorded as fully cleared anyway.`
+          : `${fmt(-diff)} more than the net amount — the extra will be recorded too.`;
+      };
+      const bankAccts = data.accounts.filter(a=>a.type!=='credit');
+      const row = document.getElementById('netSettleAccountRow');
+      if(!bankAccts.length){
+        row.innerHTML = '<span style="font-size:13px;color:var(--text-faint);">No bank/cash accounts — add one first</span>';
+        row.dataset.selected = '';
+      } else {
+        row.dataset.selected = bankAccts[0].id;
+        row.innerHTML = bankAccts.map(a=>`<button class="chip-opt ${a.id===bankAccts[0].id?'sel':''}" data-a="${a.id}">${escapeHtml(a.name)}</button>`).join('');
+        row.querySelectorAll('button').forEach(b=> b.onclick=()=>{ row.dataset.selected=b.dataset.a; row.querySelectorAll('button').forEach(x=>x.classList.toggle('sel',x===b)); });
+      }
+    }
+    netSettlePersonId = personId;
+    openModal('netSettleModalBg');
+  }
+  let netSettlePersonId = null;
+  document.getElementById('netSettleBtn').onclick = ()=> openNetSettleModal(personDetailId);
+  document.getElementById('netSettleConfirmBtn').onclick = ()=>{
+    const personId = netSettlePersonId;
+    if(!personId) return;
+    const items = data.ious.filter(i=>i.personId===personId && !i.settled);
+    const owed = items.filter(i=>i.type==='owed_to_me');
+    const iowe = items.filter(i=>i.type==='i_owe');
+    if(!owed.length || !iowe.length) return;
+    const list = [...owed, ...iowe];
+    const sumOwed = owed.reduce((s,i)=>s+Number(i.amount),0);
+    const sumIOwe = iowe.reduce((s,i)=>s+Number(i.amount),0);
+    const rawNet = sumOwed - sumIOwe;
+    const person = data.people.find(x=>x.id===personId);
+    const roundingBal = (person && person.roundingBalance) || 0;
+    const net = Math.round((rawNet + roundingBal)*100)/100;
+    const absNet = Math.abs(net);
+    const isReceive = net>0;
+    const today = todayISO();
+    let settleTxnId = null;
+    let accId = null;
+    let entered = absNet;
+    if(net!==0){
+      accId = document.getElementById('netSettleAccountRow').dataset.selected;
+      if(!accId){ toast('Add a bank account first'); return; }
+      entered = parseFloat(document.getElementById('netSettleAmount').value);
+      if(!entered || entered<=0){ toast('Enter a valid amount'); return; }
+      settleTxnId = uid();
+      if(isReceive){
+        data.incomes.push({id:settleTxnId, amount:entered, name:`Net settled: ${personName(personId)}`, accountId:accId, date:today});
+      } else {
+        data.transactions.push({id:settleTxnId, amount:entered, category:'Other', accountId:accId, mode:'Other', note:`Net settled: ${personName(personId)}`, date:today});
+      }
+    }
+    const diff = entered - absNet;
+    list.forEach((i, idx)=>{
+      i.settled = true;
+      i.settledAccountId = accId;
+      i.settledDate = today;
+      i.settledTxnId = settleTxnId;
+      i.settledAmount = i.amount;
+      i.diffAcknowledged = true;
+      if(idx===list.length-1 && Math.abs(diff)>=0.01){
+        i.settledAmount = i.amount + diff;
+        i.diffAcknowledged = false;
+      }
+    });
+    if(net!==0){ applyRoundingDiff(personId, rawNet, isReceive?entered:-entered); }
+    else if(person && Math.abs(roundingBal)>=0.01){ person.roundingBalance = 0; }
+    save(); closeModal('netSettleModalBg');
+    netSettlePersonId = null;
+    personSelectMode = false; personSelectedIds.clear();
+    renderSplit(); renderCards(); renderDaily(); renderMonthly();
+    if(currentView==='splitPerson') renderPersonDetail();
+    toast('Balance cleared');
+  };
   function personItemHtml(i, selectCtx){
+
 
     const linked = findLinkedTxnOrIncome(i.linkedTxnId);
     const linkedLabel = linked ? (linked.kind==='income' ? `Income · ${linked.item.name||'Income'}` : `${linked.item.category}${linked.item.note?' · '+linked.item.note:''}`) : null;
@@ -2035,6 +2193,31 @@
     const netEl = document.getElementById('personNetVal');
     netEl.textContent = (net>0?'+':net<0?'-':'') + fmt(Math.abs(net));
     netEl.style.color = net>0 ? 'var(--accent)' : net<0 ? 'var(--danger)' : 'var(--text)';
+    const roundingBal = p.roundingBalance || 0;
+    const roundingRow = document.getElementById('personRoundingRow');
+    if(Math.abs(roundingBal)>=0.01){
+      roundingRow.style.display = 'flex';
+      document.getElementById('personRoundingText').textContent = roundingBal>0
+        ? `+${fmt(roundingBal)} rounding carried (they owe you a bit extra)`
+        : `-${fmt(Math.abs(roundingBal))} rounding carried (you owe them a bit extra)`;
+    } else {
+      roundingRow.style.display = 'none';
+    }
+    const pendingOwed = items.filter(i=>!i.settled && i.type==='owed_to_me');
+    const pendingIOwe = items.filter(i=>!i.settled && i.type==='i_owe');
+    const netBanner = document.getElementById('netSettleBanner');
+    if(pendingOwed.length && pendingIOwe.length){
+      netBanner.style.display = 'flex';
+      const sumOwed = pendingOwed.reduce((s,i)=>s+Number(i.amount),0);
+      const sumIOwe = pendingIOwe.reduce((s,i)=>s+Number(i.amount),0);
+      document.getElementById('netSettleBannerText').textContent = net===0
+        ? `${fmt(sumOwed)} owed to you and ${fmt(sumIOwe)} you owe cancel out exactly.`
+        : net>0
+          ? `${fmt(sumOwed)} owed to you and ${fmt(sumIOwe)} you owe — nets to ${fmt(Math.abs(net))} owed to you.`
+          : `${fmt(sumOwed)} owed to you and ${fmt(sumIOwe)} you owe — nets to ${fmt(Math.abs(net))} you owe.`;
+    } else {
+      netBanner.style.display = 'none';
+    }
     // Drop selections for IOUs that no longer exist or became settled
     personSelectedIds.forEach(id=>{ const i=items.find(x=>x.id===id); if(!i || i.settled) personSelectedIds.delete(id); });
     const selectToggleBtn = document.getElementById('personSelectToggleBtn');
@@ -2085,10 +2268,13 @@
         const i=data.ious.find(x=>x.id===b.dataset.settle);
         if(i.settled){
           if(i.settledTxnId){
-            if(i.type==='owed_to_me') data.incomes = data.incomes.filter(x=>x.id!==i.settledTxnId);
-            else data.transactions = data.transactions.filter(x=>x.id!==i.settledTxnId);
+            const stillShared = data.ious.some(x=>x.id!==i.id && x.settledTxnId===i.settledTxnId);
+            if(!stillShared){
+              if(i.type==='owed_to_me') data.incomes = data.incomes.filter(x=>x.id!==i.settledTxnId);
+              else data.transactions = data.transactions.filter(x=>x.id!==i.settledTxnId);
+            }
           }
-          i.settled=false; i.settledTxnId=null;
+          i.settled=false; i.settledTxnId=null; i.settledAccountId=null; i.settledDate=null; i.settledAmount=null; i.diffAcknowledged=false; i.noSettleTxn=false;
           save(); renderPersonDetail(); renderSplit(); renderCards(); renderDaily(); renderMonthly();
         }
         else { openSettleModal([i.id]); }
@@ -2105,6 +2291,13 @@
       };
     });
   }
+  document.getElementById('personRoundingClearBtn').onclick = async ()=>{
+    const p = data.people.find(x=>x.id===personDetailId);
+    if(!p) return;
+    if(!(await showConfirm('Clear this rounding balance without recording any payment?'))) return;
+    p.roundingBalance = 0;
+    save(); renderPersonDetail();
+  };
   document.getElementById('personSelectToggleBtn').onclick = ()=>{
     personSelectMode = !personSelectMode;
     if(!personSelectMode) personSelectedIds.clear();
@@ -2319,8 +2512,17 @@
     const fileName = 'ledger-backup.json';
     if(window.showSaveFilePicker){
       // Chromium-based browsers: lets the user pick and truly overwrite the same file on disk.
+      // id + startIn make Chrome reopen the SAME remembered folder every time, so Android's
+      // file picker can actually detect a name clash with the previous backup and offer to
+      // replace it — without a stable id it may open a different folder each time and just
+      // create a new file with no conflict ever being detected.
       try{
-        const handle = await window.showSaveFilePicker({ suggestedName: fileName, types: [{description:'JSON', accept:{'application/json':['.json']}}] });
+        const handle = await window.showSaveFilePicker({
+          suggestedName: fileName,
+          types: [{description:'JSON', accept:{'application/json':['.json']}}],
+          id: 'ledger-backup-file',
+          startIn: 'downloads'
+        });
         const writable = await handle.createWritable();
         await writable.write(payload);
         await writable.close();
