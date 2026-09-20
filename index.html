@@ -1070,9 +1070,14 @@
       // where you already paid them. Money coming from them (they owe me), or an
       // income transaction, is always a separate real movement and needs its own account.
       const bakedInAllowed = (txType!=='income' && row.type==='i_owe');
+      // Credit cards can only be a destination when you're the one paying (i_owe) —
+      // paying someone back via card is tracked automatically in that card's billing
+      // cycle. Receiving money can never land "on" a credit card, so keep that to
+      // real bank/cash accounts only.
+      const pickerAccts = row.type==='i_owe' ? data.accounts : bankAccts;
       if(row.settled){
         if(!bakedInAllowed && (row.settleAccountId==='same' || !row.settleAccountId)){
-          row.settleAccountId = (bankAccts.find(a=>a.id===txState.acct)) ? txState.acct : ((bankAccts[0]&&bankAccts[0].id) || null);
+          row.settleAccountId = (pickerAccts.find(a=>a.id===txState.acct)) ? txState.acct : ((pickerAccts[0]&&pickerAccts[0].id) || null);
         } else if(bakedInAllowed && !row.settleAccountId){
           row.settleAccountId = 'same';
         }
@@ -1082,7 +1087,7 @@
           <label style="font-size:12px;">Where did this money actually move?</label>
           <div class="chip-row">
             ${bakedInAllowed ? `<button class="chip-opt ${row.settleAccountId==='same'?'sel':''}" data-idx="${idx}" data-settleacct="same">Same as this transaction</button>` : ''}
-            ${bankAccts.map(a=>`<button class="chip-opt ${row.settleAccountId===a.id?'sel':''}" data-idx="${idx}" data-settleacct="${a.id}">${escapeHtml(a.name)}</button>`).join('')}
+            ${pickerAccts.map(a=>`<button class="chip-opt ${row.settleAccountId===a.id?'sel':''}" data-idx="${idx}" data-settleacct="${a.id}">${escapeHtml(a.name)}${a.type==='credit'?' (credit)':''}</button>`).join('')}
           </div>
         </div>` : '';
       return `<div class="split-row" data-row="${idx}" style="margin-bottom:14px; padding-bottom:14px; ${idx<txSplitRows.length-1?'border-bottom:1px solid var(--border);':''}">
@@ -2060,15 +2065,15 @@
           : `${fmt(-diff)} more than owed — the extra will be recorded too.`;
       }
     };
-    const bankAccts = data.accounts.filter(a=>a.type!=='credit');
+    const pickerAccts = isReceive ? data.accounts.filter(a=>a.type!=='credit') : data.accounts;
     const row = document.getElementById('settleAccountRow');
-    if(!bankAccts.length){
+    if(!pickerAccts.length){
       row.innerHTML = '<span style="font-size:13px;color:var(--text-faint);">No bank/cash accounts — add one first</span>';
       row.dataset.selected = '';
     } else {
-      const sel = (list.length===1 && list[0].settledAccountId && bankAccts.find(a=>a.id===list[0].settledAccountId)) ? list[0].settledAccountId : bankAccts[0].id;
+      const sel = (list.length===1 && list[0].settledAccountId && pickerAccts.find(a=>a.id===list[0].settledAccountId)) ? list[0].settledAccountId : pickerAccts[0].id;
       row.dataset.selected = sel;
-      row.innerHTML = bankAccts.map(a=>`<button class="chip-opt ${a.id===sel?'sel':''}" data-a="${a.id}">${escapeHtml(a.name)}</button>`).join('');
+      row.innerHTML = pickerAccts.map(a=>`<button class="chip-opt ${a.id===sel?'sel':''}" data-a="${a.id}">${escapeHtml(a.name)}${a.type==='credit'?' (credit)':''}</button>`).join('');
       row.querySelectorAll('button').forEach(b=> b.onclick=()=>{ row.dataset.selected=b.dataset.a; row.querySelectorAll('button').forEach(x=>x.classList.toggle('sel',x===b)); });
     }
     openModal('settleModalBg');
@@ -2077,7 +2082,7 @@
     const list = settleIouIds.map(id=>data.ious.find(x=>x.id===id)).filter(Boolean);
     if(!list.length) return;
     const accId = document.getElementById('settleAccountRow').dataset.selected;
-    if(!accId){ toast('Add a bank account first'); return; }
+    if(!accId){ toast('Add an account first'); return; }
     const amount = parseFloat(document.getElementById('settleAmount').value);
     if(!amount || amount<=0){ toast('Enter a valid amount'); return; }
     const isReceive = list[0].type==='owed_to_me';
@@ -2150,14 +2155,14 @@
           ? `${fmt(diff)} less than the net amount — recorded as fully cleared anyway.`
           : `${fmt(-diff)} more than the net amount — the extra will be recorded too.`;
       };
-      const bankAccts = data.accounts.filter(a=>a.type!=='credit');
+      const pickerAccts = isReceive ? data.accounts.filter(a=>a.type!=='credit') : data.accounts;
       const row = document.getElementById('netSettleAccountRow');
-      if(!bankAccts.length){
+      if(!pickerAccts.length){
         row.innerHTML = '<span style="font-size:13px;color:var(--text-faint);">No bank/cash accounts — add one first</span>';
         row.dataset.selected = '';
       } else {
-        row.dataset.selected = bankAccts[0].id;
-        row.innerHTML = bankAccts.map(a=>`<button class="chip-opt ${a.id===bankAccts[0].id?'sel':''}" data-a="${a.id}">${escapeHtml(a.name)}</button>`).join('');
+        row.dataset.selected = pickerAccts[0].id;
+        row.innerHTML = pickerAccts.map(a=>`<button class="chip-opt ${a.id===pickerAccts[0].id?'sel':''}" data-a="${a.id}">${escapeHtml(a.name)}${a.type==='credit'?' (credit)':''}</button>`).join('');
         row.querySelectorAll('button').forEach(b=> b.onclick=()=>{ row.dataset.selected=b.dataset.a; row.querySelectorAll('button').forEach(x=>x.classList.toggle('sel',x===b)); });
       }
     }
@@ -2188,7 +2193,7 @@
     let entered = absNet;
     if(net!==0){
       accId = document.getElementById('netSettleAccountRow').dataset.selected;
-      if(!accId){ toast('Add a bank account first'); return; }
+      if(!accId){ toast('Add an account first'); return; }
       entered = parseFloat(document.getElementById('netSettleAmount').value);
       if(!entered || entered<=0){ toast('Enter a valid amount'); return; }
       settleTxnId = uid();
