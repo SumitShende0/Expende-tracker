@@ -260,6 +260,9 @@
     <div class="section-label" style="margin-top:14px">Your accounts</div>
     <div id="acctList"></div>
     <button class="btn full" id="addAcctBtn" style="margin-top:4px;">+ Add card / account</button>
+    <button class="btn full" id="transferBtn" style="margin-top:8px;">⇄ Transfer between accounts</button>
+    <div class="section-label" id="transferLogLabel" style="display:none; margin-top:18px;">Recent transfers</div>
+    <div id="transferLogWrap"></div>
     <div id="cycleWrap" style="display:none;">
       <div class="section-label">Billing cycle</div>
       <div class="cycle-panel">
@@ -556,6 +559,18 @@
 </div>
 
 <!-- Settle Split Modal -->
+<div class="modal-bg" id="transferModalBg">
+  <div class="modal" style="border-radius:22px; max-width:440px; margin:0 auto;">
+    <div class="modal-head"><button class="modal-cancel-btn" data-close="transferModalBg">Cancel</button><h2>Transfer money</h2><button class="modal-action-btn" id="transferConfirmBtn">Transfer</button></div>
+    <div class="form-grid">
+      <div class="field"><label>Amount (₹)</label><input type="number" id="transferAmount" placeholder="0.00"></div>
+      <div class="field"><label>From account</label><div class="chip-row" id="transferFromRow"></div></div>
+      <div class="field"><label>To account</label><div class="chip-row" id="transferToRow"></div></div>
+      <div class="field"><label>Date</label><input type="date" id="transferDate"></div>
+      <div class="field"><label>Note (optional)</label><input type="text" id="transferNote" placeholder="e.g. Moving savings"></div>
+    </div>
+  </div>
+</div>
 <div class="modal-bg" id="settleModalBg">
   <div class="modal" style="border-radius:22px; max-width:440px; margin:0 auto;">
     <div class="modal-head"><button class="modal-cancel-btn" data-close="settleModalBg">Cancel</button><h2 id="settleModalTitle">Settle up</h2><button class="modal-action-btn" id="settleConfirmBtn">Confirm</button></div>
@@ -598,6 +613,7 @@
   let data = load();
   if(!data.incomes) data.incomes = [];
   if(!data.ious) data.ious = [];
+  if(!data.transfers) data.transfers = [];
   if(!data.people) data.people = [];
   if(!data.categories || !data.categories.length) data.categories = [...DEFAULT_CATEGORIES];
   data.recurring.forEach(r=>{ if(!r.type) r.type='expense'; });
@@ -763,6 +779,10 @@
     let bal = Number(acct.startingBalance||0);
     data.incomes.filter(i=>i.accountId===acct.id).forEach(i=> bal += Number(i.amount));
     data.transactions.filter(t=>t.accountId===acct.id).forEach(t=> bal -= Number(t.amount));
+    data.transfers.forEach(tr=>{
+      if(tr.fromAccountId===acct.id) bal -= Number(tr.amount);
+      if(tr.toAccountId===acct.id) bal += Number(tr.amount);
+    });
     return bal;
   }
 
@@ -1361,6 +1381,7 @@
 
   function renderCards(){
     const wrap = document.getElementById('acctList');
+    renderTransferLog();
     if(!data.accounts.length){
       wrap.innerHTML = '<div class="empty"><div class="big">💳</div><div class="txt">No accounts yet.<br>Add your bank, UPI or credit card.</div></div>';
       document.getElementById('cycleWrap').style.display='none';
@@ -1398,6 +1419,75 @@
       });
     });
   }
+
+  // ---------- TRANSFERS (between own accounts — not income/expense) ----------
+  function renderTransferLog(){
+    const label = document.getElementById('transferLogLabel');
+    const wrap = document.getElementById('transferLogWrap');
+    if(!data.transfers.length){ label.style.display='none'; wrap.innerHTML=''; return; }
+    label.style.display='block';
+    const sorted = [...data.transfers].sort((a,b)=> b.date.localeCompare(a.date));
+    wrap.innerHTML = sorted.slice(0,10).map(tr=>{
+      const dt = new Date(tr.date+'T00:00:00').toLocaleDateString('en-IN',{day:'numeric',month:'short'});
+      return `<div class="rec-item" data-id="${tr.id}">
+        <div>
+          <div class="name">${escapeHtml(acctName(tr.fromAccountId))} → ${escapeHtml(acctName(tr.toAccountId))}</div>
+          <div class="meta">${dt}${tr.note?' · '+escapeHtml(tr.note):''}</div>
+        </div>
+        <div class="row-end">
+          <div class="amt mono" style="font-size:13px;">${fmt(tr.amount)}</div>
+          <button class="link-btn" data-deltransfer="${tr.id}" style="color:var(--danger); font-size:12px;">Delete</button>
+        </div>
+      </div>`;
+    }).join('');
+    wrap.querySelectorAll('[data-deltransfer]').forEach(b=>{
+      b.onclick = async ()=>{
+        if(!(await showConfirm('Delete this transfer? This will undo its effect on both account balances.'))) return;
+        data.transfers = data.transfers.filter(x=>x.id!==b.dataset.deltransfer);
+        save(); renderTransferLog(); renderCards();
+      };
+    });
+  }
+  let transferFrom = null, transferTo = null;
+  function renderTransferAcctRows(){
+    const fromRow = document.getElementById('transferFromRow');
+    const toRow = document.getElementById('transferToRow');
+    if(!transferFrom || !data.accounts.find(a=>a.id===transferFrom)) transferFrom = data.accounts[0].id;
+    if(!transferTo || !data.accounts.find(a=>a.id===transferTo) || transferTo===transferFrom){
+      transferTo = (data.accounts.find(a=>a.id!==transferFrom)||data.accounts[0]).id;
+    }
+    fromRow.innerHTML = data.accounts.map(a=>`<button class="chip-opt ${a.id===transferFrom?'sel':''}" data-a="${a.id}">${escapeHtml(a.name)}</button>`).join('');
+    toRow.innerHTML = data.accounts.map(a=>`<button class="chip-opt ${a.id===transferTo?'sel':''}" data-a="${a.id}">${escapeHtml(a.name)}</button>`).join('');
+    fromRow.querySelectorAll('button').forEach(b=> b.onclick=()=>{
+      transferFrom = b.dataset.a;
+      if(transferTo===transferFrom) transferTo = (data.accounts.find(a=>a.id!==transferFrom)||{}).id || null;
+      renderTransferAcctRows();
+    });
+    toRow.querySelectorAll('button').forEach(b=> b.onclick=()=>{
+      if(b.dataset.a===transferFrom){ toast("From and to can't be the same account"); return; }
+      transferTo = b.dataset.a;
+      renderTransferAcctRows();
+    });
+  }
+  document.getElementById('transferBtn').onclick = ()=>{
+    if(data.accounts.length<2){ toast('Add at least two accounts first'); return; }
+    document.getElementById('transferAmount').value='';
+    document.getElementById('transferDate').value = todayISO();
+    document.getElementById('transferNote').value='';
+    renderTransferAcctRows();
+    openModal('transferModalBg');
+  };
+  document.getElementById('transferConfirmBtn').onclick = ()=>{
+    const amount = parseFloat(document.getElementById('transferAmount').value);
+    if(!amount || amount<=0){ toast('Enter a valid amount'); return; }
+    if(!transferFrom || !transferTo || transferFrom===transferTo){ toast('Pick two different accounts'); return; }
+    const date = document.getElementById('transferDate').value || todayISO();
+    const note = document.getElementById('transferNote').value.trim();
+    data.transfers.push({id:uid(), fromAccountId:transferFrom, toAccountId:transferTo, amount, date, note});
+    save(); closeModal('transferModalBg');
+    toast('Transferred');
+    renderCards();
+  };
 
   // ---------- ANALYTICS DETAIL (account / category / overview, by month, with drill-down) ----------
   function txnsForScope(scope){
