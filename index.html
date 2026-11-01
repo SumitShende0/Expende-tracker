@@ -1548,11 +1548,16 @@
       return;
     }
     wrap.innerHTML = data.accounts.map(a=>{
-      const spend = data.transactions.filter(t=>t.accountId===a.id)
-        .filter(t=>{ const td=new Date(t.date+'T00:00:00'); return td.getMonth()===new Date().getMonth() && td.getFullYear()===new Date().getFullYear(); })
-        .reduce((s,t)=>s+Number(t.amount),0);
       const isCredit = a.type==='credit';
-      const balLabel = isCredit ? 'This month' : 'Balance';
+      // Credit cards follow their billing cycle (same range as the cycle panel), not the calendar month.
+      let spend = 0;
+      if(isCredit){
+        const cyc = getCycle(a, 0);
+        spend = data.transactions.filter(t=>t.accountId===a.id)
+          .filter(t=>{ const td=new Date(t.date+'T00:00:00'); return td>=cyc.start && td<=cyc.end; })
+          .reduce((s,t)=>s+Number(t.amount),0);
+      }
+      const balLabel = isCredit ? 'This cycle' : 'Balance';
       const balVal = isCredit ? spend : getBalance(a);
       return `<div class="acct-card" style="background:linear-gradient(135deg, ${a.color}, ${a.color}CC);" data-id="${a.id}">
         <button class="acct-edit-btn" data-edit="${a.id}">${icoEdit(14)}</button>
