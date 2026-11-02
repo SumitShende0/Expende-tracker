@@ -722,7 +722,12 @@
   function save(){ localStorage.setItem(STORE_KEY, JSON.stringify(data)); }
   function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
   function toast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),1800); }
-  function fmt(n){ return '₹'+Number(n).toLocaleString('en-IN',{maximumFractionDigits:0}); }
+  // Whole amounts show as ₹1,200; amounts with paise show both decimals (₹1,200.50).
+  function fmt(n){
+    const r = Math.round((Number(n)||0)*100)/100;
+    const hasPaise = Math.abs(r - Math.trunc(r)) > 0;
+    return '₹'+r.toLocaleString('en-IN',{minimumFractionDigits: hasPaise?2:0, maximumFractionDigits:2});
+  }
   function daysInMonth(y,m){ return new Date(y,m+1,0).getDate(); }
   function isoDate(d){ return d.toISOString().slice(0,10); }
   function todayISO(){ return isoDate(new Date()); }
