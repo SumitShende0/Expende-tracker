@@ -2371,7 +2371,7 @@
       accounts:data.accounts.map(a=>({name:a.name,type:a.type,startingBalance:a.startingBalance,balance:getBalance(a)}))};
   }
   const AI_PROVS={claude:{label:'Claude',key:'ledgerAiKey_v1',ph:'sk-ant-…',url:'console.anthropic.com'},gemini:{label:'Gemini',key:'ledgerGeminiKey_v1',ph:'AIza…',url:'aistudio.google.com/apikey'}};
-  const GEMINI_MODEL='gemini-3.8-flash', AI_PROV_KEY='ledgerAiProvider_v1';
+  const GEMINI_MODELS=['gemini-3.5-flash-lite','gemini-3.8-flash','gemini-3.5-flash'], AI_PROV_KEY='ledgerAiProvider_v1';
   const AI_SYS='You are a concise personal-finance assistant inside an Indian expense tracker (amounts in INR). Use only the JSON provided. Give short, concrete answers with numbers and a few bullet points. If the data is not enough, say what is missing. Never invent transactions.';
   function aiProv(){ const p=localStorage.getItem(AI_PROV_KEY); return AI_PROVS[p]?p:'claude'; }
   async function askAI(q){
@@ -2382,10 +2382,20 @@
     try{
       let txt;
       if(prov==='gemini'){
-        const res=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(key)}`,{method:'POST',headers:{'content-type':'application/json'},
-          body:JSON.stringify({systemInstruction:{parts:[{text:AI_SYS}]},contents:[{role:'user',parts:[{text:prompt}]}],generationConfig:{maxOutputTokens:2000}})});
-        const j=await res.json();
-        if(!res.ok) throw new Error((j.error&&j.error.message)||('Error '+res.status));
+        const body=JSON.stringify({systemInstruction:{parts:[{text:AI_SYS}]},contents:[{role:'user',parts:[{text:prompt}]}],generationConfig:{maxOutputTokens:2000}});
+        let res, j;
+        outer: for(const model of GEMINI_MODELS){
+          for(let attempt=0; attempt<2; attempt++){
+            res=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`,{method:'POST',headers:{'content-type':'application/json'},body});
+            j=await res.json();
+            if(res.ok) break outer;
+            if([404,429].includes(res.status)) break;            // not available / quota: try next model
+            if(![500,503].includes(res.status)) break outer;     // real error: stop
+            out.textContent='Gemini is busy, trying again…';
+            await new Promise(r=>setTimeout(r,1200));
+          }
+        }
+        if(!res.ok) throw new Error(((j.error&&j.error.message)||('Error '+res.status))+(res.status===503?' — try again in a minute or switch to Claude.':''));
         const parts=(j.candidates&&j.candidates[0]&&j.candidates[0].content&&j.candidates[0].content.parts)||[];
         txt=parts.map(x=>x.text||'').join('\n');
         if(!txt) throw new Error('Empty response (it may have been blocked)');
