@@ -94,6 +94,7 @@
   .txn .meta{font-size:12px; color:var(--text-faint); margin-top:1px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
   .txn .amt{font-family:var(--font-mono); font-size:15px; font-weight:600; color:var(--danger); flex-shrink:0;}
   .txn .amt.recurring{color:var(--amber);}
+  .txn .amt.xfer{color:#7AA7FF;}
   .txn .dup,.txn .del{flex-shrink:0;}
   .dup,.del{width:26px; height:26px; border-radius:7px; color:var(--text-faint); flex-shrink:0; display:flex; align-items:center; justify-content:center;}
   .empty{text-align:center; padding:50px 20px; color:var(--text-faint);}
@@ -219,6 +220,7 @@
 <header class="topbar">
   <div class="brand"><div class="mark">₹</div><h1>Ledger</h1></div>
   <div class="topbar-actions">
+    <button class="icon-btn" id="insightsBtn" title="Insights &amp; AI" style="font-size:16px;">✨</button>
     <button class="icon-btn" id="quickBackupBtn" title="Import / Export JSON"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"></path></svg></button>
     <button class="icon-btn" id="settingsBtn" title="Settings"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></button>
   </div>
@@ -254,12 +256,16 @@
       <div class="fp-label">Category</div><div class="chip-row" id="filterCatRow"></div>
       <div class="fp-label">Account</div><div class="chip-row" id="filterAcctRow"></div>
       <div class="fp-label">Mode</div><div class="chip-row" id="filterModeRow"></div>
+      <div class="fp-label">Search</div><div class="field"><input type="search" id="filterQ" placeholder="Note, category, account…"></div>
+      <div class="fp-label">Amount (₹)</div><div class="row2"><div class="field"><input type="number" id="filterMin" placeholder="Min"></div><div class="field"><input type="number" id="filterMax" placeholder="Max"></div></div>
+      <div class="fp-label">Quick range</div><div class="chip-row" id="filterPresetRow"></div>
       <div class="fp-label">Date range</div>
       <div class="field"><input type="date" id="filterFrom"></div>
       <div class="field"><input type="date" id="filterTo"></div>
       <button class="btn full" id="filterClearBtn" style="margin-top:12px;">Clear filters</button>
     </div>
     <div class="filter-total-banner" id="filterBanner" style="display:none;"></div>
+    <div id="filterChart"></div>
     <div id="dailyList"></div>
   </section>
 
@@ -302,6 +308,20 @@
     <div id="acctDetailChart" style="margin-bottom:6px;"></div>
     <div class="section-label">Transactions</div>
     <div id="acctDetailList"></div>
+  </section>
+
+  <section class="view" id="view-insights">
+    <div style="display:flex; align-items:center; gap:10px; margin-top:14px;">
+      <button class="icon-btn" id="insBackBtn"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg></button>
+      <div class="section-label" style="margin:0; flex:1;">Insights</div>
+    </div>
+    <div class="chip-row" id="insPeriodRow" style="margin-top:12px;"></div>
+    <div class="hero" style="margin-top:14px;" id="insHero"></div>
+    <div class="section-label">Income vs spending</div><div id="insBars"></div>
+    <div class="section-label">Where it went</div><div id="insDonut"></div>
+    <div class="section-label">By weekday</div><div class="cat-bars" id="insWeekday"></div>
+    <div class="section-label">Smart insights</div><div id="insList"></div>
+    <div class="section-label">Ask AI</div><div id="insAi"></div>
   </section>
 
   <section class="view" id="view-monthDetail">
@@ -844,8 +864,8 @@
   }
 
   // ---------- NAV ----------
-  const views = ['monthly','daily','cards','recurring','split','splitPerson','accountDetail','monthDetail'];
-  const DRILL_VIEWS = ['accountDetail','monthDetail','splitPerson'];
+  const views = ['monthly','daily','cards','recurring','split','splitPerson','accountDetail','monthDetail','insights'];
+  const DRILL_VIEWS = ['accountDetail','monthDetail','splitPerson','insights'];
   let currentView = 'monthly';
 
   // History-backed navigation: drill-down views push a history entry so the
@@ -876,6 +896,7 @@
     let navKey = v;
     if(v==='splitPerson') navKey = 'split';
     else if(v==='accountDetail') navKey = (analyticsScope && analyticsScope.type==='account') ? 'cards' : 'monthly';
+    else if(v==='insights') navKey = 'monthly';
     else if(v==='monthDetail') navKey = (monthDetailContext && monthDetailContext.scope.type==='account') ? 'cards' : 'monthly';
     document.querySelectorAll('.navbtn').forEach(b=>b.classList.toggle('active', b.dataset.view===navKey));
     const fabBtn = document.getElementById('fabAdd');
@@ -888,6 +909,7 @@
     if(v==='splitPerson') renderPersonDetail();
     if(v==='accountDetail') renderAccountDetail();
     if(v==='monthDetail') renderMonthDetail();
+    if(v==='insights') renderInsights();
   }
   document.querySelectorAll('.navbtn').forEach(b=> b.onclick = ()=> showView(b.dataset.view));
   document.getElementById('fabAdd').onclick = ()=>{
@@ -948,17 +970,33 @@
   }
 
   // ---------- FILTERS (Daily view) ----------
-  let filterState = {types:new Set(), cats:new Set(), accts:new Set(), modes:new Set(), from:'', to:''};
+  let filterState = {types:new Set(), cats:new Set(), accts:new Set(), modes:new Set(), from:'', to:'', q:'', min:'', max:''};
   function toggleSetVal(set,val){ if(set.has(val)) set.delete(val); else set.add(val); }
-  function filterActive(){ return filterState.types.size||filterState.cats.size||filterState.accts.size||filterState.modes.size||filterState.from||filterState.to; }
+  function filterActive(){ return filterState.types.size||filterState.cats.size||filterState.accts.size||filterState.modes.size||filterState.from||filterState.to||filterState.q||filterState.min!==''||filterState.max!==''; }
+  function lIso(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+  function fExtra(amt,text,date){
+    if(filterState.from && date<filterState.from) return false;
+    if(filterState.to && date>filterState.to) return false;
+    const a=Number(amt);
+    if(filterState.min!=='' && a<Number(filterState.min)) return false;
+    if(filterState.max!=='' && a>Number(filterState.max)) return false;
+    if(filterState.q && !String(text).toLowerCase().includes(filterState.q.toLowerCase())) return false;
+    return true;
+  }
+  function presetRange(k){
+    const n=new Date(), y=n.getFullYear(), m=n.getMonth();
+    if(k==='m') return [lIso(new Date(y,m,1)), lIso(new Date(y,m+1,0))];
+    if(k==='l') return [lIso(new Date(y,m-1,1)), lIso(new Date(y,m,0))];
+    if(k==='30') return [lIso(new Date(y,m,n.getDate()-29)), lIso(n)];
+    return [lIso(new Date(y,0,1)), lIso(new Date(y,11,31))];
+  }
   function applyFilters(list){
     return list.filter(t=>{
       if(filterState.types.size && !filterState.types.has('expense')) return false;
       if(filterState.cats.size && !filterState.cats.has(t.category)) return false;
       if(filterState.accts.size && !filterState.accts.has(t.accountId)) return false;
       if(filterState.modes.size && !filterState.modes.has(t.mode)) return false;
-      if(filterState.from && t.date < filterState.from) return false;
-      if(filterState.to && t.date > filterState.to) return false;
+      if(!fExtra(t.amount,[t.note,t.category,acctName(t.accountId),t.mode].join(' '),t.date)) return false;
       return true;
     });
   }
@@ -967,10 +1005,26 @@
       if(filterState.types.size && !filterState.types.has('income')) return false;
       if(filterState.cats.size) return false;
       if(filterState.accts.size && !filterState.accts.has(i.accountId)) return false;
-      if(filterState.from && i.date < filterState.from) return false;
-      if(filterState.to && i.date > filterState.to) return false;
+      if(!fExtra(i.amount,[i.name,acctName(i.accountId)].join(' '),i.date)) return false;
       return true;
     });
+  }
+  function applyFiltersTransfer(list){
+    return list.filter(tr=>{
+      if(filterState.types.size && !filterState.types.has('transfer')) return false;
+      if(filterState.cats.size) return false;
+      if(filterState.modes.size) return false;
+      if(filterState.accts.size && !filterState.accts.has(tr.fromAccountId) && !filterState.accts.has(tr.toAccountId)) return false;
+      if(!fExtra(tr.amount,[tr.note,acctName(tr.fromAccountId),acctName(tr.toAccountId)].join(' '),tr.date)) return false;
+      return true;
+    });
+  }
+  // Which account's point of view to show a transfer from (so it reads as +/-):
+  // only when exactly one end of the transfer is in the selected account filter.
+  function transferView(tr){
+    if(!filterState.accts.size) return null;
+    const ends = [tr.fromAccountId, tr.toAccountId].filter(id=> filterState.accts.has(id));
+    return ends.length===1 ? ends[0] : null;
   }
   document.getElementById('filterToggleBtn').onclick = ()=>{
     const panel = document.getElementById('filterPanel');
@@ -980,7 +1034,7 @@
   };
   function renderFilterPanel(){
     const typeRow=document.getElementById('filterTypeRow');
-    typeRow.innerHTML = [['expense','Expense'],['income','Income']].map(([v,l])=>`<button class="chip-opt ${filterState.types.has(v)?'sel':''}" data-t="${v}">${l}</button>`).join('');
+    typeRow.innerHTML = [['expense','Expense'],['income','Income'],['transfer','Transfer']].map(([v,l])=>`<button class="chip-opt ${filterState.types.has(v)?'sel':''}" data-t="${v}">${l}</button>`).join('');
     typeRow.querySelectorAll('button').forEach(b=> b.onclick=()=>{ toggleSetVal(filterState.types,b.dataset.t); renderFilterPanel(); renderDaily(); });
     const catRow=document.getElementById('filterCatRow');
     catRow.innerHTML = data.categories.map(c=>`<button class="chip-opt ${filterState.cats.has(c)?'sel':''}" data-c="${escapeHtml(c)}">${escapeHtml(c)}</button>`).join('');
@@ -993,13 +1047,48 @@
     modeRow.querySelectorAll('button').forEach(b=> b.onclick=()=>{ toggleSetVal(filterState.modes,b.dataset.m); renderFilterPanel(); renderDaily(); });
     document.getElementById('filterFrom').value = filterState.from;
     document.getElementById('filterTo').value = filterState.to;
+    document.getElementById('filterQ').value = filterState.q;
+    document.getElementById('filterMin').value = filterState.min;
+    document.getElementById('filterMax').value = filterState.max;
+    const pr = document.getElementById('filterPresetRow');
+    pr.innerHTML = [['m','This month'],['l','Last month'],['30','30 days'],['y','This year']].map(([k,l])=>`<button class="chip-opt" data-k="${k}">${l}</button>`).join('');
+    pr.querySelectorAll('button').forEach(b=> b.onclick=()=>{ const r=presetRange(b.dataset.k); filterState.from=r[0]; filterState.to=r[1]; renderFilterPanel(); renderDaily(); });
+  }
+  [['filterQ','q'],['filterMin','min'],['filterMax','max']].forEach(([id,k])=>{ document.getElementById(id).addEventListener('input',e=>{ filterState[k]=e.target.value.trim(); renderDaily(); }); });
+  function renderFilterChart(base){
+    const el = document.getElementById('filterChart');
+    if(!filterActive() || !base.length){ el.innerHTML=''; return; }
+    const by = {}; base.forEach(t=>{ const k=t.date.slice(0,7); by[k]=(by[k]||0)+Number(t.amount); });
+    const keys = Object.keys(by).sort().slice(-12);
+    const pts = keys.map(k=>({label:new Date(k+'-01T00:00:00').toLocaleDateString('en-IN',{month:'short'}), total:by[k]}));
+    const cats = {}; base.forEach(t=>{ cats[t.category]=(cats[t.category]||0)+Number(t.amount); });
+    const ce = Object.entries(cats).sort((a,b)=>b[1]-a[1]).slice(0,5), mx = ce[0][1]||1;
+    el.innerHTML = `<div class="section-label" style="margin:4px 0 6px">Spending in this filter</div><div id="filterChartBars"></div><div class="cat-bars" style="margin-top:10px;">${ce.map(([c,v])=>`<div class="cat-row"><div class="name">${escapeHtml(c)}</div><div class="track"><div class="fill" style="width:${(v/mx*100).toFixed(0)}%"></div></div><div class="val mono">${fmt(v)}</div></div>`).join('')}</div>`;
+    renderMiniBarChart('filterChartBars', pts, null);
   }
   document.getElementById('filterFrom').onchange = (e)=>{ filterState.from=e.target.value; renderDaily(); };
   document.getElementById('filterTo').onchange = (e)=>{ filterState.to=e.target.value; renderDaily(); };
-  document.getElementById('filterClearBtn').onclick = ()=>{ filterState={types:new Set(),cats:new Set(),accts:new Set(),modes:new Set(),from:'',to:''}; renderFilterPanel(); renderDaily(); };
+  document.getElementById('filterClearBtn').onclick = ()=>{ filterState={types:new Set(),cats:new Set(),accts:new Set(),modes:new Set(),from:'',to:'',q:'',min:'',max:''}; renderFilterPanel(); renderDaily(); };
 
   // ---------- DAILY ----------
   function txnRowHtml(t){
+    if(t._kind==='transfer'){
+      const v = t._view;
+      const noteTxt = t.note ? ' · '+escapeHtml(t.note) : '';
+      let title, meta, amtTxt;
+      if(v && v===t.fromAccountId){ title = 'Transfer to '+escapeHtml(acctName(t.toAccountId)); meta = '⇄ '+escapeHtml(acctName(v))+noteTxt; amtTxt = '-'+fmt(t.amount); }
+      else if(v && v===t.toAccountId){ title = 'Transfer from '+escapeHtml(acctName(t.fromAccountId)); meta = '⇄ '+escapeHtml(acctName(v))+noteTxt; amtTxt = '+'+fmt(t.amount); }
+      else { title = 'Transfer'; meta = escapeHtml(acctName(t.fromAccountId))+' → '+escapeHtml(acctName(t.toAccountId))+noteTxt; amtTxt = fmt(t.amount); }
+      return `<div class="txn" data-id="${t.id}" data-kind="transfer">
+        <div class="dot" style="background:#7AA7FF"></div>
+        <div class="info">
+          <div class="cat">${title}</div>
+          <div class="meta">${meta}</div>
+        </div>
+        <div class="amt xfer">${amtTxt}</div>
+        <button class="del" data-id="${t.id}" data-kind="transfer" title="Delete">${icoX(14)}</button>
+      </div>`;
+    }
     const isIncome = t._kind==='income';
     if(isIncome){
       return `<div class="txn" data-id="${t.id}" data-kind="income">
@@ -1026,6 +1115,7 @@
     wrap.querySelectorAll('.txn').forEach(el=>{
       el.addEventListener('click',(e)=>{
         if(e.target.closest('.del')) return;
+        if(el.dataset.kind==='transfer'){ openTransferEdit(el.dataset.id); return; }
         openTxModal(el.dataset.id);
       });
     });
@@ -1033,7 +1123,15 @@
       b.onclick = async (e)=>{
         e.stopPropagation();
         const isIncome = b.dataset.kind==='income';
-        if(!(await showConfirm(isIncome ? 'Delete this income entry?' : 'Delete this transaction?'))) return;
+        const isTransfer = b.dataset.kind==='transfer';
+        if(!(await showConfirm(isTransfer ? 'Delete this transfer? This will undo its effect on both account balances.' : (isIncome ? 'Delete this income entry?' : 'Delete this transaction?')))) return;
+        if(isTransfer){
+          data.transfers = data.transfers.filter(x=>x.id!==b.dataset.id);
+          save(); renderTransferLog(); renderCards(); renderMonthly();
+          if(onChange) onChange();
+          toast('Deleted');
+          return;
+        }
         if(isIncome){
           data.incomes = data.incomes.filter(i=>i.id!==b.dataset.id);
           data.ious = data.ious.filter(i=>i.linkedTxnId!==b.dataset.id);
@@ -1053,23 +1151,33 @@
     const banner = document.getElementById('filterBanner');
     const base = applyFilters(data.transactions);
     const incomeBase = applyFiltersIncome(data.incomes);
+    const transferBase = applyFiltersTransfer(data.transfers);
+    renderFilterChart(base);
     if(filterActive()){
       const total = base.reduce((s,t)=>s+Number(t.amount),0);
+      const cnt = base.length + transferBase.length;
       banner.style.display='flex';
-      banner.innerHTML = `<span>${base.length} transaction${base.length===1?'':'s'} matched</span><span class="val">${fmt(total)}</span>`;
+      banner.innerHTML = `<span>${cnt} transaction${cnt===1?'':'s'} matched</span><span class="val">${fmt(total)}</span>`;
     } else { banner.style.display='none'; }
-    if(!base.length && !incomeBase.length){
-      wrap.innerHTML = (data.transactions.length || data.incomes.length) ? '<div class="empty"><div class="big">🔍</div><div class="txt">No transactions match these filters.</div></div>' : '<div class="empty"><div class="big">🧾</div><div class="txt">No expenses logged yet.<br>Tap + to add your first one.</div></div>';
+    if(!base.length && !incomeBase.length && !transferBase.length){
+      wrap.innerHTML = (data.transactions.length || data.incomes.length || data.transfers.length) ? '<div class="empty"><div class="big">🔍</div><div class="txt">No transactions match these filters.</div></div>' : '<div class="empty"><div class="big">🧾</div><div class="txt">No expenses logged yet.<br>Tap + to add your first one.</div></div>';
       return;
     }
-    const merged = [...base.map(t=>({...t,_kind:'expense'})), ...incomeBase.map(i=>({...i,_kind:'income'}))];
+    const merged = [...base.map(t=>({...t,_kind:'expense'})), ...incomeBase.map(i=>({...i,_kind:'income'})), ...transferBase.map(tr=>({...tr,_kind:'transfer',_view:transferView(tr)}))];
     const sorted = merged.sort((a,b)=> b.date.localeCompare(a.date) || 0);
     const groups = {};
     sorted.forEach(t=>{ (groups[t.date] = groups[t.date]||[]).push(t); });
     const dates = Object.keys(groups).sort((a,b)=>b.localeCompare(a));
     wrap.innerHTML = dates.map(date=>{
       const items = groups[date];
-      const dayTotal = items.reduce((s,t)=> s + (t._kind==='income' ? Number(t.amount) : -Number(t.amount)), 0);
+      const dayTotal = items.reduce((s,t)=>{
+        if(t._kind==='transfer'){
+          if(t._view && t._view===t.fromAccountId) return s - Number(t.amount);
+          if(t._view && t._view===t.toAccountId) return s + Number(t.amount);
+          return s;
+        }
+        return s + (t._kind==='income' ? Number(t.amount) : -Number(t.amount));
+      }, 0);
       const dObj = new Date(date+'T00:00:00');
       const label = dObj.toLocaleDateString('en-IN',{weekday:'short', day:'numeric', month:'short'});
       const rows = items.map(txnRowHtml).join('');
@@ -1685,8 +1793,14 @@
     renderMiniBarChart('acctDetailChart', months, (idx)=> openMonthDetail(scope, months[idx].y, months[idx].m));
 
     const wrap = document.getElementById('acctDetailList');
-    if(!txns.length){ wrap.innerHTML = '<div class="empty"><div class="big">🧾</div><div class="txt">No transactions yet.</div></div>'; return; }
-    const sorted = [...txns].sort((a,b)=> b.date.localeCompare(a.date));
+    let listItems = txns;
+    if(scope.type==='account'){
+      const xfers = data.transfers.filter(tr=> tr.fromAccountId===scope.id || tr.toAccountId===scope.id).map(tr=>({...tr,_kind:'transfer',_view:scope.id}));
+      const incs = data.incomes.filter(i=>i.accountId===scope.id).map(i=>({...i,_kind:'income'}));
+      listItems = [...txns, ...xfers, ...incs];
+    }
+    if(!listItems.length){ wrap.innerHTML = '<div class="empty"><div class="big">🧾</div><div class="txt">No transactions yet.</div></div>'; return; }
+    const sorted = [...listItems].sort((a,b)=> b.date.localeCompare(a.date));
     const groups = {}; const order = [];
     sorted.forEach(t=>{
       const d = new Date(t.date+'T00:00:00');
@@ -1696,7 +1810,7 @@
     });
     wrap.innerHTML = order.map(key=>{
       const g = groups[key];
-      const total = g.items.reduce((s,t)=>s+Number(t.amount),0);
+      const total = g.items.reduce((s,t)=>s+(t._kind?0:Number(t.amount)),0);
       const rows = g.items.map(txnRowHtml).join('');
       return `<div class="day-group"><div class="day-header" data-y="${g.y}" data-m="${g.m}" style="cursor:pointer;"><span>${g.label}</span><span class="day-total mono">${fmt(total)}</span></div>${rows}</div>`;
     }).join('');
@@ -1737,14 +1851,23 @@
     });
 
     const wrap = document.getElementById('monthDetailList');
-    if(!monthTxns.length){ wrap.innerHTML = '<div class="empty"><div class="big">🧾</div><div class="txt">No transactions this month.</div></div>'; return; }
-    const sorted = [...monthTxns].sort((a,b)=> b.date.localeCompare(a.date));
+    let monthItems = monthTxns;
+    if(scope.type==='account'){
+      const xfers = data.transfers.filter(tr=>{
+        if(tr.fromAccountId!==scope.id && tr.toAccountId!==scope.id) return false;
+        const td=new Date(tr.date+'T00:00:00'); return td.getFullYear()===y && td.getMonth()===m;
+      }).map(tr=>({...tr,_kind:'transfer',_view:scope.id}));
+      const incs = data.incomes.filter(i=>i.accountId===scope.id && i.date.slice(0,7)===y+'-'+String(m+1).padStart(2,'0')).map(i=>({...i,_kind:'income'}));
+      monthItems = [...monthTxns, ...xfers, ...incs];
+    }
+    if(!monthItems.length){ wrap.innerHTML = '<div class="empty"><div class="big">🧾</div><div class="txt">No transactions this month.</div></div>'; return; }
+    const sorted = [...monthItems].sort((a,b)=> b.date.localeCompare(a.date));
     const groups = {};
     sorted.forEach(t=>{ (groups[t.date]=groups[t.date]||[]).push(t); });
     const dates = Object.keys(groups).sort((a,b)=>b.localeCompare(a));
     wrap.innerHTML = dates.map(date=>{
       const items = groups[date];
-      const dTotal = items.reduce((s,t)=>s+Number(t.amount),0);
+      const dTotal = items.reduce((s,t)=>s+(t._kind?0:Number(t.amount)),0);
       const dObj = new Date(date+'T00:00:00');
       const label = dObj.toLocaleDateString('en-IN',{weekday:'short', day:'numeric', month:'short'});
       const rows = items.map(txnRowHtml).join('');
@@ -2107,7 +2230,9 @@
       b.onclick = async ()=>{
         if(!(await showConfirm('Delete this transfer? This will undo its effect on both account balances.'))) return;
         data.transfers = data.transfers.filter(x=>x.id!==b.dataset.deltransfer);
-        save(); renderTransferLog(); renderCards();
+        save(); renderTransferLog(); renderCards(); renderDaily();
+        if(currentView==='accountDetail') renderAccountDetail();
+        if(currentView==='monthDetail') renderMonthDetail();
       };
     });
   }
@@ -2132,7 +2257,23 @@
       renderTransferAcctRows();
     });
   }
+  let transferEditId = null;
+  function refreshTransferViews(){
+    renderCards(); renderTransferLog(); renderDaily(); renderMonthly();
+    if(currentView==='accountDetail') renderAccountDetail();
+    if(currentView==='monthDetail') renderMonthDetail();
+  }
+  function openTransferEdit(id){
+    const tr = data.transfers.find(x=>x.id===id); if(!tr) return;
+    transferEditId = id; transferFrom = tr.fromAccountId; transferTo = tr.toAccountId;
+    document.querySelector('#transferModalBg h2').textContent = 'Edit transfer';
+    document.getElementById('transferAmount').value = tr.amount;
+    document.getElementById('transferDate').value = tr.date;
+    document.getElementById('transferNote').value = tr.note || '';
+    renderTransferAcctRows(); openModal('transferModalBg');
+  }
   document.getElementById('transferBtn').onclick = ()=>{
+    transferEditId = null; document.querySelector('#transferModalBg h2').textContent = 'Transfer money';
     if(data.accounts.length<2){ toast('Add at least two accounts first'); return; }
     document.getElementById('transferAmount').value='';
     document.getElementById('transferDate').value = todayISO();
@@ -2146,12 +2287,140 @@
     if(!transferFrom || !transferTo || transferFrom===transferTo){ toast('Pick two different accounts'); return; }
     const date = document.getElementById('transferDate').value || todayISO();
     const note = document.getElementById('transferNote').value.trim();
-    data.transfers.push({id:uid(), fromAccountId:transferFrom, toAccountId:transferTo, amount, date, note});
+    if(transferEditId){
+      const tr = data.transfers.find(x=>x.id===transferEditId);
+      if(tr) Object.assign(tr,{fromAccountId:transferFrom, toAccountId:transferTo, amount, date, note});
+    } else data.transfers.push({id:uid(), fromAccountId:transferFrom, toAccountId:transferTo, amount, date, note});
     save(); closeModal('transferModalBg');
-    toast('Transferred');
-    renderCards();
+    toast(transferEditId ? 'Transfer updated' : 'Transferred');
+    transferEditId = null; refreshTransferViews();
   };
 
+
+  // ---------- INSIGHTS + AI ----------
+  const AI_MODEL='claude-sonnet-5-5';
+  const PALETTE=['#4ADE9A','#FFB454','#7AA7FF','#FF6B6B','#C792EA','#5CD3E0','#8B93A7'];
+  const FIELD_CSS='width:100%; background:rgba(255,255,255,0.06); border:1px solid var(--glass-border); border-radius:10px; padding:10px; color:var(--text); font:inherit; font-size:14px;';
+  let insPeriod = 3, aiBusy = false;
+  function sumAmt(l){ return l.reduce((a,t)=>a+Number(t.amount),0); }
+  function groupAmt(l,f){ const m={}; l.forEach(t=>{ const k=f(t); m[k]=(m[k]||0)+Number(t.amount); }); return m; }
+  function insData(){
+    const now=new Date(), n=insPeriod;
+    const st=new Date(now.getFullYear(),now.getMonth()-(n-1),1), en=new Date(now.getFullYear(),now.getMonth()+1,0);
+    const ps=new Date(now.getFullYear(),now.getMonth()-(2*n-1),1), pe=new Date(st.getTime()-86400000);
+    const S=lIso(st), E=lIso(en), PS=lIso(ps), PE=lIso(pe), inR=(d,a,b)=>d>=a&&d<=b;
+    const ex=data.transactions.filter(t=>inR(t.date,S,E)), inc=data.incomes.filter(i=>inR(i.date,S,E));
+    const pex=data.transactions.filter(t=>inR(t.date,PS,PE));
+    const series=[];
+    for(let i=0;i<n;i++){ const d=new Date(st.getFullYear(),st.getMonth()+i,1), k=lIso(d).slice(0,7);
+      series.push({label:d.toLocaleDateString('en-IN',{month:'short'}), a:sumAmt(ex.filter(t=>t.date.startsWith(k))), b:sumAmt(inc.filter(t=>t.date.startsWith(k)))}); }
+    const wd=[0,0,0,0,0,0,0]; ex.forEach(t=>{ wd[new Date(t.date+'T00:00:00').getDay()]+=Number(t.amount); });
+    return {S,E,n,now,ex,inc,spent:sumAmt(ex),income:sumAmt(inc),prevSpent:sumAmt(pex),byCat:groupAmt(ex,t=>t.category||'Other'),prevCat:groupAmt(pex,t=>t.category||'Other'),series,wd};
+  }
+  function insTips(D){
+    if(!D.ex.length) return ['No spending recorded in this period yet.'];
+    const tips=[], cats=Object.entries(D.byCat).sort((a,b)=>b[1]-a[1]);
+    tips.push(`Top category: ${cats[0][0]} — ${fmt(cats[0][1])} (${Math.round(cats[0][1]/D.spent*100)}% of spending).`);
+    if(D.income>0){ const r=Math.round((D.income-D.spent)/D.income*100); tips.push(r>=0?`You kept ${r}% of your income (${fmt(D.income-D.spent)} net).`:`Spending exceeded income by ${fmt(D.spent-D.income)}.`); }
+    if(D.prevSpent>0){
+      const ch=Math.round((D.spent-D.prevSpent)/D.prevSpent*100);
+      tips.push(`Spending is ${Math.abs(ch)}% ${ch>=0?'higher':'lower'} than the previous ${D.n===1?'month':D.n+' months'} (${fmt(D.prevSpent)}).`);
+      let best=null; cats.forEach(([c,v])=>{ const d=v-(D.prevCat[c]||0); if(d>0&&(!best||d>best.d)) best={c,d}; });
+      if(best) tips.push(`Biggest rise: ${best.c} (+${fmt(best.d)} vs before).`);
+    }
+    const amts=D.ex.map(t=>Number(t.amount)), mean=sumAmt(D.ex)/amts.length, sd=Math.sqrt(amts.reduce((a,b)=>a+(b-mean)**2,0)/amts.length);
+    D.ex.filter(t=>Number(t.amount)>mean+2*sd).sort((a,b)=>b.amount-a.amount).slice(0,3).forEach(t=>tips.push(`Unusually large: ${fmt(t.amount)} on ${t.category}${t.note?' ('+t.note+')':''}, ${t.date}.`));
+    const dim=daysInMonth(D.now.getFullYear(),D.now.getMonth()), dom=D.now.getDate();
+    const cur=sumAmt(data.transactions.filter(t=>t.date.startsWith(lIso(D.now).slice(0,7))));
+    if(dom>=5 && dom<dim) tips.push(`At this pace, this month ends near ${fmt(cur/dom*dim)} (${fmt(cur)} so far).`);
+    return tips;
+  }
+  function groupedBarsSvg(pts){
+    const n=pts.length, bw=16, gp=18, w=n*(bw*2+gp)+gp, mx=Math.max(1,...pts.map(p=>Math.max(p.a,p.b)));
+    let g=''; pts.forEach((p,i)=>{ const x=gp+i*(bw*2+gp), ha=Math.max(2,p.a/mx*80), hb=Math.max(2,p.b/mx*80);
+      g+=`<rect x="${x}" y="${90-ha}" width="${bw}" height="${ha}" rx="4" fill="#FF6B6B"/><rect x="${x+bw+2}" y="${90-hb}" width="${bw}" height="${hb}" rx="4" fill="#4ADE9A"/><text x="${x+bw}" y="106" text-anchor="middle" font-size="10" fill="#8B93A7" font-family="monospace">${p.label}</text>`; });
+    return `<svg viewBox="0 0 ${w} 114" width="100%" style="max-height:150px;display:block;">${g}</svg><div style="display:flex;gap:14px;font-size:12px;color:var(--text-dim);margin-top:6px;"><span><span style="color:#FF6B6B">●</span> Spent</span><span><span style="color:#4ADE9A">●</span> Income</span></div>`;
+  }
+  function donutHtml(byCat,total){
+    let e=Object.entries(byCat).sort((a,b)=>b[1]-a[1]); if(!e.length) return '<div class="empty"><div class="txt">No spending in this period.</div></div>';
+    if(e.length>6){ const o=e.slice(6).reduce((a,x)=>a+x[1],0); e=e.slice(0,6); e.push(['Other',o]); }
+    const C=2*Math.PI*40; let off=0, arcs='';
+    e.forEach(([c,v],i)=>{ const len=v/total*C; arcs+=`<circle cx="60" cy="60" r="40" fill="none" stroke="${PALETTE[i]}" stroke-width="18" stroke-dasharray="${len} ${C-len}" stroke-dashoffset="${-off}" transform="rotate(-90 60 60)"/>`; off+=len; });
+    return `<div style="display:flex;align-items:center;gap:16px;"><svg viewBox="0 0 120 120" width="120" height="120" style="flex-shrink:0;">${arcs}<text x="60" y="64" text-anchor="middle" font-size="11" fill="#EDEFF4" font-family="monospace">${fmt(total)}</text></svg><div style="flex:1;min-width:0;">${e.map(([c,v],i)=>`<div style="display:flex;justify-content:space-between;gap:8px;font-size:12.5px;padding:3px 0;"><span style="color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"><span style="color:${PALETTE[i]}">●</span> ${escapeHtml(c)}</span><span class="mono">${Math.round(v/total*100)}%</span></div>`).join('')}</div></div>`;
+  }
+  function renderInsights(){
+    const D=insData();
+    const row=document.getElementById('insPeriodRow');
+    row.innerHTML=[[1,'This month'],[3,'3 months'],[6,'6 months'],[12,'12 months']].map(([n,l])=>`<button class="chip-opt ${insPeriod===n?'sel':''}" data-n="${n}">${l}</button>`).join('');
+    row.querySelectorAll('button').forEach(b=> b.onclick=()=>{ insPeriod=Number(b.dataset.n); renderInsights(); });
+    const net=D.income-D.spent;
+    document.getElementById('insHero').innerHTML=`<div class="eyebrow">Spent</div><div class="amount mono">${fmt(D.spent)}</div><div class="sub mono" style="color:var(--accent);margin-top:4px;">Income ${fmt(D.income)} · Net ${fmt(net)}</div>`;
+    document.getElementById('insBars').innerHTML=groupedBarsSvg(D.series);
+    document.getElementById('insDonut').innerHTML=donutHtml(D.byCat,D.spent);
+    const days=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'], mx=Math.max(1,...D.wd);
+    document.getElementById('insWeekday').innerHTML=D.wd.map((v,i)=>`<div class="cat-row"><div class="name">${days[i]}</div><div class="track"><div class="fill" style="width:${(v/mx*100).toFixed(0)}%"></div></div><div class="val mono">${fmt(v)}</div></div>`).join('');
+    document.getElementById('insList').innerHTML=insTips(D).map(t=>`<div class="rec-item" style="font-size:13.5px;line-height:1.45;display:block;">${escapeHtml(t)}</div>`).join('');
+    renderInsAi();
+  }
+  function aiContext(){
+    const D=insData();
+    const top=[...D.ex].sort((a,b)=>b.amount-a.amount).slice(0,15).map(t=>({date:t.date,category:t.category,note:t.note||'',amount:Number(t.amount),account:acctName(t.accountId),mode:t.mode}));
+    return {currency:'INR',period:{from:D.S,to:D.E,months:D.n},spent:D.spent,income:D.income,previousPeriodSpent:D.prevSpent,
+      monthly:D.series.map(x=>({month:x.label,spent:x.a,income:x.b})),spendByCategory:D.byCat,previousSpendByCategory:D.prevCat,largestExpenses:top,
+      incomeSources:groupAmt(D.inc,i=>i.name||'Income'),transfersInPeriod:data.transfers.filter(t=>t.date>=D.S&&t.date<=D.E).length,
+      accounts:data.accounts.map(a=>({name:a.name,type:a.type,startingBalance:a.startingBalance,balance:getBalance(a)}))};
+  }
+  const AI_PROVS={claude:{label:'Claude',key:'ledgerAiKey_v1',ph:'sk-ant-…',url:'console.anthropic.com'},gemini:{label:'Gemini',key:'ledgerGeminiKey_v1',ph:'AIza…',url:'aistudio.google.com/apikey'}};
+  const GEMINI_MODEL='gemini-2.5-flash', AI_PROV_KEY='ledgerAiProvider_v1';
+  const AI_SYS='You are a concise personal-finance assistant inside an Indian expense tracker (amounts in INR). Use only the JSON provided. Give short, concrete answers with numbers and a few bullet points. If the data is not enough, say what is missing. Never invent transactions.';
+  function aiProv(){ const p=localStorage.getItem(AI_PROV_KEY); return AI_PROVS[p]?p:'claude'; }
+  async function askAI(q){
+    const prov=aiProv(), key=localStorage.getItem(AI_PROVS[prov].key), out=document.getElementById('aiOut');
+    if(!key||!q||aiBusy) return;
+    aiBusy=true; out.textContent='Thinking…';
+    const prompt='My data:\n'+JSON.stringify(aiContext())+'\n\nQuestion: '+q;
+    try{
+      let txt;
+      if(prov==='gemini'){
+        const res=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(key)}`,{method:'POST',headers:{'content-type':'application/json'},
+          body:JSON.stringify({systemInstruction:{parts:[{text:AI_SYS}]},contents:[{role:'user',parts:[{text:prompt}]}],generationConfig:{maxOutputTokens:2000}})});
+        const j=await res.json();
+        if(!res.ok) throw new Error((j.error&&j.error.message)||('Error '+res.status));
+        const parts=(j.candidates&&j.candidates[0]&&j.candidates[0].content&&j.candidates[0].content.parts)||[];
+        txt=parts.map(x=>x.text||'').join('\n');
+        if(!txt) throw new Error('Empty response (it may have been blocked)');
+      } else {
+        const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'content-type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+          body:JSON.stringify({model:AI_MODEL,max_tokens:1000,system:AI_SYS,messages:[{role:'user',content:prompt}]})});
+        const j=await res.json();
+        if(!res.ok) throw new Error((j.error&&j.error.message)||('Error '+res.status));
+        txt=(j.content||[]).filter(c=>c.type==='text').map(c=>c.text).join('\n');
+      }
+      out.innerHTML=escapeHtml(txt).replace(/\*\*(.+?)\*\*/g,'<b>$1</b>');
+    }catch(e){ out.textContent='Could not get an answer: '+e.message; }
+    aiBusy=false;
+  }
+  function renderInsAi(){
+    const w=document.getElementById('insAi'), prov=aiProv(), P=AI_PROVS[prov], key=localStorage.getItem(P.key);
+    const provRow=`<div class="chip-row" id="aiProvRow" style="margin-bottom:10px;">${Object.entries(AI_PROVS).map(([k,v])=>`<button class="chip-opt ${k===prov?'sel':''}" data-p="${k}">${v.label}</button>`).join('')}</div>`;
+    let body;
+    if(!key){
+      body=`<div class="rec-item" style="display:block;"><div style="font-size:13px;color:var(--text-dim);line-height:1.5;margin-bottom:10px;">Paste your ${P.label} API key (get one at ${P.url}). It stays on this device and is not part of backups. When you ask, summarized figures and notes are sent to ${prov==='gemini'?'Google':'Anthropic'}.</div><input type="password" id="aiKeyInput" placeholder="${P.ph}" autocomplete="off" style="${FIELD_CSS} margin-bottom:10px;"><button class="btn primary full" id="aiKeySave">Save key</button></div>`;
+    } else {
+      body=`<div class="chip-row" id="aiChips">${['Summarize this period','Where can I save money?','Spot unusual spending','Do my balances look right?'].map(c=>`<button class="chip-opt">${c}</button>`).join('')}</div><textarea id="aiQ" rows="2" placeholder="Ask anything about your spending…" style="${FIELD_CSS} margin-top:10px; resize:none;"></textarea><button class="btn primary full" id="aiAsk" style="margin-top:10px;">Ask ${P.label}</button><div id="aiOut" style="margin-top:12px;font-size:14px;line-height:1.55;white-space:pre-wrap;"></div><button class="link-btn" id="aiKeyDel" style="color:var(--danger);font-size:12px;margin-top:12px;">Remove ${P.label} key</button>`;
+    }
+    w.innerHTML=provRow+body;
+    w.querySelectorAll('#aiProvRow button').forEach(b=> b.onclick=()=>{ localStorage.setItem(AI_PROV_KEY,b.dataset.p); renderInsAi(); });
+    if(!key){
+      document.getElementById('aiKeySave').onclick=()=>{ const v=document.getElementById('aiKeyInput').value.trim(); if(!v){ toast('Paste your key first'); return; } localStorage.setItem(P.key,v); renderInsAi(); };
+      return;
+    }
+    w.querySelectorAll('#aiChips .chip-opt').forEach(b=> b.onclick=()=>{ document.getElementById('aiQ').value=b.textContent; askAI(b.textContent); });
+    document.getElementById('aiAsk').onclick=()=> askAI(document.getElementById('aiQ').value.trim());
+    document.getElementById('aiKeyDel').onclick=()=>{ localStorage.removeItem(P.key); renderInsAi(); };
+  }
+  document.getElementById('insightsBtn').onclick=()=> showView('insights');
+  document.getElementById('insBackBtn').onclick=()=> navBack();
 
   // ---------- DD-MM-YYYY DATE DISPLAY ----------
   // Native <input type="date"> shows dates in the device locale. Wrap each one so it always
