@@ -2371,7 +2371,7 @@
       accounts:data.accounts.map(a=>({name:a.name,type:a.type,startingBalance:a.startingBalance,balance:getBalance(a)}))};
   }
   const AI_PROVS={claude:{label:'Claude',key:'ledgerAiKey_v1',ph:'sk-ant-…',url:'console.anthropic.com'},gemini:{label:'Gemini',key:'ledgerGeminiKey_v1',ph:'AIza…',url:'aistudio.google.com/apikey'}};
-  const GEMINI_MODEL='gemini-2.5-flash', AI_PROV_KEY='ledgerAiProvider_v1';
+  const GEMINI_MODEL='gemini-3.8-flash', AI_PROV_KEY='ledgerAiProvider_v1';
   const AI_SYS='You are a concise personal-finance assistant inside an Indian expense tracker (amounts in INR). Use only the JSON provided. Give short, concrete answers with numbers and a few bullet points. If the data is not enough, say what is missing. Never invent transactions.';
   function aiProv(){ const p=localStorage.getItem(AI_PROV_KEY); return AI_PROVS[p]?p:'claude'; }
   async function askAI(q){
