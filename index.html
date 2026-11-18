@@ -126,6 +126,9 @@
   .btn{padding:10px 16px; border-radius:10px; font-size:13.5px; font-weight:600; background:rgba(255,255,255,0.06); -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px); border:1px solid var(--glass-border);}
   .btn.primary{background:var(--accent); color:#0B1710; border:none;}
   .btn.full{width:100%; padding:13px;}
+  .ai-spin{display:inline-block; width:12px; height:12px; border:2px solid currentColor; border-top-color:transparent; border-radius:50%; animation:aispin .7s linear infinite; vertical-align:-2px; margin-right:6px;}
+  @keyframes aispin{to{transform:rotate(360deg);}}
+  .btn:disabled{cursor:not-allowed;}
   .btn.small{padding:7px 12px; font-size:12.5px;}
 
   .rec-item{background:var(--glass-bg); -webkit-backdrop-filter:blur(16px) saturate(160%); backdrop-filter:blur(16px) saturate(160%); border:1px solid var(--glass-border); border-radius:14px; padding:14px 16px; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center; box-shadow:0 6px 16px rgba(0,0,0,.18);}
@@ -584,6 +587,7 @@
           <div><div class="name" style="color:var(--danger);">Clear all app data</div><div class="meta">Erase everything stored on this device</div></div>
         </div>
       </button>
+      <div id="settingsAi"></div>
       <div style="font-size:12px; color:var(--text-faint); text-align:center; margin-top:4px;">Ledger always runs in dark mode.</div>
     </div>
   </div>
@@ -799,7 +803,7 @@
 
   // ---------- SETTINGS ----------
   document.getElementById('quickBackupBtn').onclick = ()=>{ renderLastBackupLabel(); openModal('backupModalBg'); };
-  document.getElementById('settingsBtn').onclick = ()=> openModal('settingsModalBg');
+  document.getElementById('settingsBtn').onclick = ()=>{ renderSettingsAi(); openModal('settingsModalBg'); };
   document.getElementById('settingsExportBtn').onclick = ()=>{ closeModal('settingsModalBg'); exportToExcel(); };
   document.getElementById('settingsBackupBtn').onclick = ()=>{ closeModal('settingsModalBg'); renderLastBackupLabel(); openModal('backupModalBg'); };
   document.getElementById('settingsClearBtn').onclick = ()=>{
@@ -2377,7 +2381,7 @@
   async function askAI(q){
     const prov=aiProv(), key=localStorage.getItem(AI_PROVS[prov].key), out=document.getElementById('aiOut');
     if(!key||!q||aiBusy) return;
-    aiBusy=true; out.textContent='Thinking…';
+    setAiBusy(true); out.textContent='Thinking…';
     const prompt='My data:\n'+JSON.stringify(aiContext())+'\n\nQuestion: '+q;
     try{
       let txt;
@@ -2408,26 +2412,39 @@
       }
       out.innerHTML=escapeHtml(txt).replace(/\*\*(.+?)\*\*/g,'<b>$1</b>');
     }catch(e){ out.textContent='Could not get an answer: '+e.message; }
-    aiBusy=false;
+    setAiBusy(false);
+  }
+  function setAiBusy(b){
+    aiBusy=b;
+    const btn=document.getElementById('aiAsk');
+    if(btn){ btn.disabled=b; btn.style.opacity=b?'.6':''; btn.innerHTML=b?'<span class="ai-spin"></span>Asking…':'Ask '+AI_PROVS[aiProv()].label; }
+    document.querySelectorAll('#aiChips .chip-opt').forEach(c=>{ c.disabled=b; c.style.opacity=b?'.5':''; });
   }
   function renderInsAi(){
     const w=document.getElementById('insAi'), prov=aiProv(), P=AI_PROVS[prov], key=localStorage.getItem(P.key);
     const provRow=`<div class="chip-row" id="aiProvRow" style="margin-bottom:10px;">${Object.entries(AI_PROVS).map(([k,v])=>`<button class="chip-opt ${k===prov?'sel':''}" data-p="${k}">${v.label}</button>`).join('')}</div>`;
     let body;
     if(!key){
-      body=`<div class="rec-item" style="display:block;"><div style="font-size:13px;color:var(--text-dim);line-height:1.5;margin-bottom:10px;">Paste your ${P.label} API key (get one at ${P.url}). It stays on this device and is not part of backups. When you ask, summarized figures and notes are sent to ${prov==='gemini'?'Google':'Anthropic'}.</div><input type="password" id="aiKeyInput" placeholder="${P.ph}" autocomplete="off" style="${FIELD_CSS} margin-bottom:10px;"><button class="btn primary full" id="aiKeySave">Save key</button></div>`;
+      body=`<div class="rec-item" style="display:block;"><div style="font-size:13px;color:var(--text-dim);line-height:1.5;margin-bottom:10px;">Add your ${P.label} API key in Settings to ask questions about your money.</div><button class="btn primary full" id="aiOpenSettings">Open Settings</button></div>`;
     } else {
-      body=`<div class="chip-row" id="aiChips">${['Summarize this period','Where can I save money?','Spot unusual spending','Do my balances look right?'].map(c=>`<button class="chip-opt">${c}</button>`).join('')}</div><textarea id="aiQ" rows="2" placeholder="Ask anything about your spending…" style="${FIELD_CSS} margin-top:10px; resize:none;"></textarea><button class="btn primary full" id="aiAsk" style="margin-top:10px;">Ask ${P.label}</button><div id="aiOut" style="margin-top:12px;font-size:14px;line-height:1.55;white-space:pre-wrap;"></div><button class="link-btn" id="aiKeyDel" style="color:var(--danger);font-size:12px;margin-top:12px;">Remove ${P.label} key</button>`;
+      body=`<div class="chip-row" id="aiChips">${['Summarize this period','Where can I save money?','Spot unusual spending','Do my balances look right?'].map(c=>`<button class="chip-opt">${c}</button>`).join('')}</div><textarea id="aiQ" rows="2" placeholder="Ask anything about your spending…" style="${FIELD_CSS} margin-top:10px; resize:none;"></textarea><button class="btn primary full" id="aiAsk" style="margin-top:10px;">Ask ${P.label}</button><div id="aiOut" style="margin-top:12px;font-size:14px;line-height:1.55;white-space:pre-wrap;"></div>`;
     }
     w.innerHTML=provRow+body;
-    w.querySelectorAll('#aiProvRow button').forEach(b=> b.onclick=()=>{ localStorage.setItem(AI_PROV_KEY,b.dataset.p); renderInsAi(); });
-    if(!key){
-      document.getElementById('aiKeySave').onclick=()=>{ const v=document.getElementById('aiKeyInput').value.trim(); if(!v){ toast('Paste your key first'); return; } localStorage.setItem(P.key,v); renderInsAi(); };
-      return;
-    }
-    w.querySelectorAll('#aiChips .chip-opt').forEach(b=> b.onclick=()=>{ document.getElementById('aiQ').value=b.textContent; askAI(b.textContent); });
-    document.getElementById('aiAsk').onclick=()=> askAI(document.getElementById('aiQ').value.trim());
-    document.getElementById('aiKeyDel').onclick=()=>{ localStorage.removeItem(P.key); renderInsAi(); };
+    w.querySelectorAll('#aiProvRow button').forEach(b=> b.onclick=()=>{ if(aiBusy) return; localStorage.setItem(AI_PROV_KEY,b.dataset.p); renderInsAi(); });
+    if(!key){ document.getElementById('aiOpenSettings').onclick=()=>{ renderSettingsAi(); openModal('settingsModalBg'); }; return; }
+    w.querySelectorAll('#aiChips .chip-opt').forEach(b=> b.onclick=()=>{ if(aiBusy) return; document.getElementById('aiQ').value=b.textContent; askAI(b.textContent); });
+    document.getElementById('aiAsk').onclick=()=>{ const q=document.getElementById('aiQ').value.trim(); if(!q){ toast('Type a question first'); return; } askAI(q); };
+    setAiBusy(aiBusy);
+  }
+  function renderSettingsAi(){
+    const w=document.getElementById('settingsAi');
+    w.innerHTML='<div class="section-label" style="margin:14px 0 8px;">AI assistant keys</div>'+Object.entries(AI_PROVS).map(([k,P])=>{
+      const has=!!localStorage.getItem(P.key);
+      return `<div class="rec-item" style="display:block;"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;"><div><div class="name">${P.label}</div><div class="meta">${has?'Key saved on this device':'No key yet — get one at '+P.url}</div></div>${has?`<button class="link-btn" data-del="${k}" style="color:var(--danger);font-size:12px;">Remove</button>`:''}</div>${has?'':`<input type="password" data-in="${k}" placeholder="${P.ph}" autocomplete="off" style="${FIELD_CSS} margin-top:10px;"><button class="btn primary full" data-save="${k}" style="margin-top:10px;">Save key</button>`}</div>`;
+    }).join('');
+    const after=()=>{ renderSettingsAi(); if(currentView==='insights') renderInsAi(); };
+    w.querySelectorAll('[data-save]').forEach(b=> b.onclick=()=>{ const k=b.dataset.save, v=w.querySelector('[data-in="'+k+'"]').value.trim(); if(!v){ toast('Paste your key first'); return; } localStorage.setItem(AI_PROVS[k].key,v); toast('Key saved'); after(); });
+    w.querySelectorAll('[data-del]').forEach(b=> b.onclick=async()=>{ const k=b.dataset.del; if(!(await showConfirm('Remove your '+AI_PROVS[k].label+' API key from this device?','Remove'))) return; localStorage.removeItem(AI_PROVS[k].key); after(); });
   }
   document.getElementById('insightsBtn').onclick=()=> showView('insights');
   document.getElementById('insBackBtn').onclick=()=> navBack();
