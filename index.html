@@ -318,7 +318,7 @@
     <div class="chip-row" id="insPeriodRow" style="margin-top:12px;"></div>
     <div class="hero" style="margin-top:14px;" id="insHero"></div>
     <div class="section-label">Income vs spending</div><div id="insBars"></div>
-    <div class="section-label">Where it went</div><div id="insDonut"></div>
+    <div class="section-label">Where it went</div><div id="insDonut"></div><div id="insDonutTx"></div>
     <div class="section-label">By weekday</div><div class="cat-bars" id="insWeekday"></div>
     <div class="section-label">Smart insights</div><div id="insList"></div>
     <div class="section-label">Ask AI</div><div id="insAi"></div>
@@ -2392,22 +2392,56 @@
       g+=`<rect x="${x}" y="${90-ha}" width="${bw}" height="${ha}" rx="4" fill="#FF6B6B"/><rect x="${x+bw+2}" y="${90-hb}" width="${bw}" height="${hb}" rx="4" fill="#4ADE9A"/><text x="${x+bw}" y="106" text-anchor="middle" font-size="10" fill="#8B93A7" font-family="monospace">${p.label}</text>`; });
     return `<svg viewBox="0 0 ${w} 114" width="100%" style="max-height:150px;display:block;">${g}</svg><div style="display:flex;gap:14px;font-size:12px;color:var(--text-dim);margin-top:6px;"><span><span style="color:#FF6B6B">●</span> Spent</span><span><span style="color:#4ADE9A">●</span> Income</span></div>`;
   }
-  function donutHtml(byCat,total){
-    let e=Object.entries(byCat).sort((a,b)=>b[1]-a[1]); if(!e.length) return '<div class="empty"><div class="txt">No spending in this period.</div></div>';
-    if(e.length>6){ const o=e.slice(6).reduce((a,x)=>a+x[1],0); e=e.slice(0,6); e.push(['Other',o]); }
+  let insSelCat = null; // index into donut entries; null = nothing highlighted
+  function donutEntries(byCat){
+    let e=Object.entries(byCat).sort((a,b)=>b[1]-a[1]).map(([c,v])=>[c,v,[c]]);
+    if(e.length>6){ const tail=e.slice(6); e=e.slice(0,6); e.push(['Other',tail.reduce((a,x)=>a+x[1],0),tail.map(x=>x[0])]); }
+    return e;
+  }
+  function donutHtml(byCat,total,sel){
+    const e=donutEntries(byCat);
+    if(!e.length) return '<div class="empty"><div class="txt">No spending in this period.</div></div>';
     const C=2*Math.PI*40; let off=0, arcs='';
-    e.forEach(([c,v],i)=>{ const len=v/total*C; arcs+=`<circle cx="60" cy="60" r="40" fill="none" stroke="${PALETTE[i]}" stroke-width="18" stroke-dasharray="${len} ${C-len}" stroke-dashoffset="${-off}" transform="rotate(-90 60 60)"/>`; off+=len; });
-    return `<div style="display:flex;align-items:center;gap:16px;"><svg viewBox="0 0 120 120" width="120" height="120" style="flex-shrink:0;">${arcs}<text x="60" y="64" text-anchor="middle" font-size="11" fill="#EDEFF4" font-family="monospace">${fmt(total)}</text></svg><div style="flex:1;min-width:0;">${e.map(([c,v],i)=>`<div style="display:flex;justify-content:space-between;gap:8px;font-size:12.5px;padding:3px 0;"><span style="color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"><span style="color:${PALETTE[i]}">●</span> ${escapeHtml(c)}</span><span class="mono">${Math.round(v/total*100)}%</span></div>`).join('')}</div></div>`;
+    e.forEach(([c,v],i)=>{
+      const len=v/total*C, on=sel===i, dim=sel!==null && !on;
+      arcs+=`<circle class="dn-arc" data-i="${i}" cx="60" cy="60" r="40" fill="none" stroke="${PALETTE[i]}" stroke-width="${on?23:18}" opacity="${dim?0.3:1}" stroke-dasharray="${len} ${C-len}" stroke-dashoffset="${-off}" transform="rotate(-90 60 60)" style="cursor:pointer;transition:stroke-width .2s,opacity .2s;"/>`;
+      off+=len;
+    });
+    let centre;
+    if(sel!==null && e[sel]){
+      const [c,v]=e[sel], nm=c.length>12?c.slice(0,11)+'…':c;
+      centre=`<text x="60" y="53" text-anchor="middle" font-size="8.5" fill="${PALETTE[sel]}" font-family="monospace">${escapeHtml(nm)}</text><text x="60" y="66" text-anchor="middle" font-size="11" fill="#EDEFF4" font-family="monospace">${fmt(v)}</text><text x="60" y="77" text-anchor="middle" font-size="8.5" fill="#8B93A7" font-family="monospace">${Math.round(v/total*100)}%</text>`;
+    } else centre=`<text x="60" y="64" text-anchor="middle" font-size="11" fill="#EDEFF4" font-family="monospace">${fmt(total)}</text>`;
+    const legend=e.map(([c,v],i)=>`<div class="dn-leg" data-i="${i}" style="display:flex;justify-content:space-between;gap:8px;font-size:12.5px;padding:4px 6px;border-radius:8px;cursor:pointer;${sel===i?'background:rgba(255,255,255,0.08);':''}${sel!==null&&sel!==i?'opacity:.5;':''}"><span style="color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"><span style="color:${PALETTE[i]}">●</span> ${escapeHtml(c)}</span><span class="mono">${Math.round(v/total*100)}%</span></div>`).join('');
+    return `<div style="display:flex;align-items:center;gap:16px;"><svg viewBox="0 0 120 120" width="120" height="120" style="flex-shrink:0;overflow:visible;">${arcs}${centre}</svg><div style="flex:1;min-width:0;">${legend}</div></div>`;
+  }
+  function donutTxHtml(D,sel){
+    const e=donutEntries(D.byCat);
+    if(sel===null || !e[sel]) return '';
+    const [label,total,names]=e[sel];
+    const list=D.ex.filter(t=>names.includes(t.category||'Other')).sort((a,b)=> a.date<b.date?1:a.date>b.date?-1:0);
+    const LIM=30, shown=list.slice(0,LIM);
+    const rows=shown.map(t=>{ const m=/^(\d{4})-(\d{2})-(\d{2})/.exec(t.date||''); const d=m?`${m[3]}-${m[2]}-${m[1]}`:'';
+      return `<div class="txn"><div class="dot" style="background:${PALETTE[sel]}"></div><div class="info"><div class="cat">${escapeHtml(t.note||t.category||'Expense')}${label==='Other'&&t.note?' · '+escapeHtml(t.category||''):''}</div><div class="meta">${d} · ${escapeHtml(acctName(t.accountId))}${t.mode?' · '+escapeHtml(t.mode):''}</div></div><div class="amt">-${fmt(t.amount)}</div></div>`; }).join('');
+    return `<div class="cycle-panel" style="margin-top:12px;"><div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:6px;"><div style="font-weight:600;color:${PALETTE[sel]};">${escapeHtml(label)}</div><div class="mono" style="font-size:12.5px;color:var(--text-dim);">${list.length} transaction${list.length===1?'':'s'} · ${fmt(total)}</div></div>${rows}${list.length>LIM?`<div style="font-size:12px;color:var(--text-faint);text-align:center;padding-top:8px;">Showing latest ${LIM} of ${list.length}</div>`:''}</div>`;
+  }
+  function renderDonut(D){
+    if(insSelCat!==null && !donutEntries(D.byCat)[insSelCat]) insSelCat=null;
+    document.getElementById('insDonut').innerHTML=donutHtml(D.byCat,D.spent,insSelCat);
+    document.getElementById('insDonutTx').innerHTML=donutTxHtml(D,insSelCat);
+    document.querySelectorAll('#insDonut .dn-arc, #insDonut .dn-leg').forEach(el=> el.onclick=()=>{
+      const i=Number(el.dataset.i); insSelCat = (insSelCat===i) ? null : i; renderDonut(D);
+    });
   }
   function renderInsights(){
     const D=insData();
     const row=document.getElementById('insPeriodRow');
     row.innerHTML=[[1,'This month'],[3,'3 months'],[6,'6 months'],[12,'12 months']].map(([n,l])=>`<button class="chip-opt ${insPeriod===n?'sel':''}" data-n="${n}">${l}</button>`).join('');
-    row.querySelectorAll('button').forEach(b=> b.onclick=()=>{ insPeriod=Number(b.dataset.n); renderInsights(); });
+    row.querySelectorAll('button').forEach(b=> b.onclick=()=>{ insPeriod=Number(b.dataset.n); insSelCat=null; renderInsights(); });
     const net=D.income-D.spent;
     document.getElementById('insHero').innerHTML=`<div class="eyebrow">Spent</div><div class="amount mono">${fmt(D.spent)}</div><div class="sub mono" style="color:var(--accent);margin-top:4px;">Income ${fmt(D.income)} · Net ${fmt(net)}</div>`;
     document.getElementById('insBars').innerHTML=groupedBarsSvg(D.series);
-    document.getElementById('insDonut').innerHTML=donutHtml(D.byCat,D.spent);
+    renderDonut(D);
     const days=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'], mx=Math.max(1,...D.wd);
     document.getElementById('insWeekday').innerHTML=D.wd.map((v,i)=>`<div class="cat-row"><div class="name">${days[i]}</div><div class="track"><div class="fill" style="width:${(v/mx*100).toFixed(0)}%"></div></div><div class="val mono">${fmt(v)}</div></div>`).join('');
     document.getElementById('insList').innerHTML=insTips(D).map(t=>`<div class="rec-item" style="font-size:13.5px;line-height:1.45;display:block;">${escapeHtml(t)}</div>`).join('');
