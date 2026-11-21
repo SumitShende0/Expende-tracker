@@ -2366,27 +2366,102 @@
     document.getElementById('insList').innerHTML=insTips(D).map(t=>`<div class="rec-item" style="font-size:13.5px;line-height:1.45;display:block;">${escapeHtml(t)}</div>`).join('');
     renderInsAi();
   }
-  function aiContext(){
-    const D=insData();
-    const top=[...D.ex].sort((a,b)=>b.amount-a.amount).slice(0,15).map(t=>({date:t.date,category:t.category,note:t.note||'',amount:Number(t.amount),account:acctName(t.accountId),mode:t.mode}));
-    return {currency:'INR',period:{from:D.S,to:D.E,months:D.n},spent:D.spent,income:D.income,previousPeriodSpent:D.prevSpent,
-      monthly:D.series.map(x=>({month:x.label,spent:x.a,income:x.b})),spendByCategory:D.byCat,previousSpendByCategory:D.prevCat,largestExpenses:top,
-      incomeSources:groupAmt(D.inc,i=>i.name||'Income'),transfersInPeriod:data.transfers.filter(t=>t.date>=D.S&&t.date<=D.E).length,
+  const AI_STOP=new Set('the and for with from about all list show give tell what how much many did does spend spent spending expense expenses transaction transactions transfer transfers income incomes this last past previous month months week weeks year years today yesterday please total every each any entry entries paid pay summarize summary compare between into over under than more less have has had was were are can you could would should where when which who why top most least biggest highest lowest average per days day january february march april may june july august september october november december'.split(' '));
+  const AI_MONTHS=['january','february','march','april','may','june','july','august','september','october','november','december'];
+  function aiRange(q){
+    const t=q.toLowerCase(), now=new Date(), y=now.getFullYear(), m=now.getMonth(), d=now.getDate(), L=(a,b,c)=>lIso(new Date(a,b,c)); let mm;
+    if(/\byesterday\b/.test(t)){ const x=L(y,m,d-1); return [x,x,'yesterday']; }
+    if(/\btoday\b/.test(t)) return [lIso(now),lIso(now),'today'];
+    if((mm=t.match(/(?:last|past)\s+(\d+)\s+days?/))) return [L(y,m,d-Number(mm[1])+1),lIso(now),'last '+mm[1]+' days'];
+    if((mm=t.match(/(?:last|past)\s+(\d+)\s+months?/))) return [L(y,m-Number(mm[1])+1,1),L(y,m+1,0),'last '+mm[1]+' months'];
+    if(/\b(last|past|previous)\s+month\b/.test(t)) return [L(y,m-1,1),L(y,m,0),'last month'];
+    if(/\bthis month\b/.test(t)) return [L(y,m,1),L(y,m+1,0),'this month'];
+    const dow=(now.getDay()+6)%7;
+    if(/\bthis week\b/.test(t)) return [L(y,m,d-dow),lIso(now),'this week'];
+    if(/\b(last|past|previous)\s+week\b/.test(t)) return [L(y,m,d-dow-7),L(y,m,d-dow-1),'last week'];
+    if(/\bthis year\b/.test(t)) return [L(y,0,1),L(y,11,31),'this year'];
+    if(/\b(last|past|previous)\s+year\b/.test(t)) return [L(y-1,0,1),L(y-1,11,31),(y-1)+''];
+    for(let i=0;i<12;i++){ if(new RegExp('\\b'+AI_MONTHS[i]+'\\b').test(t)){ const yy=i<=m?y:y-1; return [L(yy,i,1),L(yy,i+1,0),AI_MONTHS[i]+' '+yy]; } }
+    return null;
+  }
+  function aiKeywords(q){
+    const vocab=new Set();
+    const add=x=>String(x||'').toLowerCase().split(/[^a-z0-9\u0900-\u097f]+/).forEach(w=>{ if(w.length>=3) vocab.add(w); });
+    data.transactions.forEach(t=>{ add(t.note); add(t.category); }); data.incomes.forEach(i=>add(i.name)); data.accounts.forEach(a=>add(a.name));
+    const out=new Set();
+    q.toLowerCase().split(/[^a-z0-9\u0900-\u097f]+/).forEach(w=>{
+      if(w.length<3||AI_STOP.has(w)) return;
+      vocab.forEach(v=>{ if(v===w || (w.length>=4 && v.length>=4 && (v.startsWith(w)||w.startsWith(v)))) out.add(v); });
+    });
+    return [...out];
+  }
+  function aiContext(q,raw,prev){
+    const D=insData(), CAP=400;
+    const R=(!raw&&q)?aiRange(q):null, kw0=(!raw&&q)?aiKeywords(q):[];
+    const reuse=!!(!raw&&!R&&!kw0.length&&prev), kw=reuse?prev.keywords:kw0, filtered=!!R||kw.length>0||reuse;
+    const S=R?R[0]:(reuse?prev.from:D.S), E=R?R[1]:(reuse?prev.to:D.E), lbl=R?R[2]:(reuse?prev.label:'selected period'), inR=x=>x.date>=S&&x.date<=E;
+    const hit=txt=>!kw.length||kw.some(k=>String(txt).toLowerCase().includes(k));
+    const ex=data.transactions.filter(t=>inR(t)&&hit([t.note,t.category,acctName(t.accountId),t.mode].join(' '))).sort((x,y)=>y.date.localeCompare(x.date));
+    const inc=data.incomes.filter(i=>inR(i)&&hit([i.name,acctName(i.accountId)].join(' '))).sort((x,y)=>y.date.localeCompare(x.date)).slice(0,150);
+    const xf=data.transfers.filter(t=>inR(t)&&hit([t.note,acctName(t.fromAccountId),acctName(t.toAccountId)].join(' '))).sort((x,y)=>y.date.localeCompare(x.date)).slice(0,150);
+    const ctx={today:lIso(D.now),currency:'INR',rowsFilter:{from:S,to:E,keywords:kw,label:lbl,reused:reuse},
+      totals:{spent:sumAmt(ex),income:sumAmt(inc),expenseCount:ex.length},spendByCategory:groupAmt(ex,t=>t.category||'Other'),
+      expenseColumns:['date','category','note','amount','account','mode'],
+      expenses:ex.slice(0,CAP).map(t=>[t.date,t.category||'',t.note||'',Number(t.amount),acctName(t.accountId),t.mode||'']),expensesTruncated:ex.length>CAP,
+      incomeColumns:['date','name','amount','account'],incomes:inc.map(i=>[i.date,i.name||'',Number(i.amount),acctName(i.accountId)]),
+      transferColumns:['date','from','to','amount','note'],transfers:xf.map(t=>[t.date,acctName(t.fromAccountId),acctName(t.toAccountId),Number(t.amount),t.note||'']),
       accounts:data.accounts.map(a=>({name:a.name,type:a.type,startingBalance:a.startingBalance,balance:getBalance(a)}))};
+    if(!filtered){ ctx.monthly=D.series.map(x=>({month:x.label,spent:x.a,income:x.b})); ctx.previousPeriodSpent=D.prevSpent; ctx.previousSpendByCategory=D.prevCat; }
+    return ctx;
   }
   const AI_PROVS={claude:{label:'Claude',key:'ledgerAiKey_v1',ph:'sk-ant-…',url:'console.anthropic.com'},gemini:{label:'Gemini',key:'ledgerGeminiKey_v1',ph:'AIza…',url:'aistudio.google.com/apikey'}};
   const GEMINI_MODELS=['gemini-3.5-flash-lite','gemini-3.8-flash','gemini-3.5-flash'], AI_PROV_KEY='ledgerAiProvider_v1';
-  const AI_SYS='You are a concise personal-finance assistant inside an Indian expense tracker (amounts in INR). Use only the JSON provided. Give short, concrete answers with numbers and a few bullet points. If the data is not enough, say what is missing. Never invent transactions.';
+  const AI_SYS='You are a concise personal-finance assistant inside an Indian expense tracker (amounts in INR). Use only the JSON provided. The rows (see the *Columns fields; dates are YYYY-MM-DD) are already filtered by rowsFilter: the date range, and the keywords if any (matched against note, category and account). So list every row given when asked to list, with date, amount and note, then the total. Do not say data is missing because of the filter. If expensesTruncated is true, say older rows may be missing. Give short, concrete answers. Never invent transactions; if the data is not enough, say what is missing. This is an ongoing conversation: earlier turns contain only the questions and answers, and the data in the latest message is the current data to use for follow-up questions.';
   function aiProv(){ const p=localStorage.getItem(AI_PROV_KEY); return AI_PROVS[p]?p:'claude'; }
-  async function askAI(q){
-    const prov=aiProv(), key=localStorage.getItem(AI_PROVS[prov].key), out=document.getElementById('aiOut');
+  // ---------- AI CHATS (saved on this device only, never in backups) ----------
+  const AI_CHATS_KEY='ledgerAiChats_v1';
+  let aiChats=null, aiCur=null, aiShowHist=false;
+  function aiLoad(){ if(aiChats) return; try{ const r=JSON.parse(localStorage.getItem(AI_CHATS_KEY)||'{}'); aiChats=Array.isArray(r.chats)?r.chats:[]; aiCur=r.cur||null; }catch(e){ aiChats=[]; aiCur=null; } }
+  function aiSaveChats(){ try{ localStorage.setItem(AI_CHATS_KEY,JSON.stringify({chats:aiChats,cur:aiCur})); }catch(e){} }
+  function aiChat(){ aiLoad(); return aiChats.find(c=>c.id===aiCur)||null; }
+  function aiFmt(t){ return escapeHtml(t).replace(/\*\*(.+?)\*\*/g,'<b>$1</b>'); }
+  function aiStatus(s){ const e=document.getElementById('aiPending'); if(e) e.textContent=s; }
+  const AI_BUB_A='scroll-margin-top:70px;margin-bottom:12px;padding:10px 12px;background:rgba(255,255,255,0.05);border:1px solid var(--glass-border);border-radius:14px 14px 14px 4px;font-size:14px;line-height:1.55;white-space:pre-wrap;';
+  function renderAiThread(pending,scroll){
+    const th=document.getElementById('aiThread'); if(!th) return;
+    const chat=aiChat(), msgs=chat?chat.msgs:[];
+    let h=msgs.map(m=> m.r==='u'
+      ? `<div style="scroll-margin-top:70px;display:flex;justify-content:flex-end;margin-bottom:8px;"><div style="max-width:85%;background:rgba(74,222,154,0.16);border:1px solid rgba(74,222,154,0.3);border-radius:14px 14px 4px 14px;padding:9px 12px;font-size:14px;line-height:1.5;white-space:pre-wrap;">${escapeHtml(m.t)}</div></div>`
+      : `<div style="${AI_BUB_A}">${aiFmt(m.t)}${m.i?`<div style="font-size:11.5px;color:var(--text-faint);margin-top:10px;">${escapeHtml(m.i)}</div>`:''}</div>`).join('');
+    if(pending) h+=`<div id="aiPending" style="${AI_BUB_A}color:var(--text-dim);">${escapeHtml(pending)}</div>`;
+    th.innerHTML=h;
+    const ch=document.getElementById('aiChips'); if(ch) ch.style.display=(msgs.length||pending)?'none':'';
+    if(scroll){ const last=th.lastElementChild; if(last) last.scrollIntoView({block:'start',behavior:'smooth'}); }
+  }
+  function renderAiHist(){
+    const el=document.getElementById('aiHist'); if(!el) return; aiLoad();
+    if(!aiShowHist){ el.innerHTML=''; return; }
+    el.innerHTML=aiChats.length?aiChats.map(c=>`<div class="rec-item" data-open="${c.id}" style="cursor:pointer;${c.id===aiCur?'border-color:var(--accent);':''}"><div style="min-width:0;flex:1;"><div class="name" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(c.title)}</div><div class="meta">${Math.ceil(c.msgs.length/2)} question${c.msgs.length>2?'s':''} · ${new Date(c.t).toLocaleDateString('en-GB',{day:'2-digit',month:'short'})}</div></div><button class="link-btn" data-delchat="${c.id}" style="color:var(--danger);font-size:12px;margin-left:10px;">Delete</button></div>`).join(''):'<div class="empty"><div class="txt">No saved chats yet.</div></div>';
+    el.querySelectorAll('[data-open]').forEach(r=> r.onclick=()=>{ if(aiBusy) return; aiCur=r.dataset.open; aiShowHist=false; aiSaveChats(); renderInsAi(); });
+    el.querySelectorAll('[data-delchat]').forEach(b=> b.onclick=async e=>{ e.stopPropagation(); if(aiBusy) return; const id=b.dataset.delchat; if(!(await showConfirm('Delete this chat?','Delete'))) return; aiChats=aiChats.filter(c=>c.id!==id); if(aiCur===id) aiCur=null; aiSaveChats(); renderInsAi(); });
+  }
+  async function askAI(q,raw){
+    const prov=aiProv(), key=localStorage.getItem(AI_PROVS[prov].key);
     if(!key||!q||aiBusy) return;
-    setAiBusy(true); out.textContent='Thinking…';
-    const prompt='My data:\n'+JSON.stringify(aiContext())+'\n\nQuestion: '+q;
+    let chat=aiChat();
+    if(!chat){ chat={id:'c'+Date.now(),title:q.slice(0,40),t:Date.now(),last:null,msgs:[]}; aiChats.unshift(chat); if(aiChats.length>30) aiChats.length=30; aiCur=chat.id; }
+    const hist=chat.msgs.slice(-12);
+    chat.msgs.push({r:'u',t:q}); aiSaveChats();
+    const qe=document.getElementById('aiQ'); if(qe) qe.value='';
+    const er0=document.getElementById('aiErr'); if(er0) er0.textContent='';
+    aiShowHist=false; renderAiHist(); const hb=document.getElementById('aiHistBtn'); if(hb) hb.classList.remove('sel');
+    setAiBusy(true); renderAiThread('Thinking…',true);
+    const ctx=aiContext(q,raw,chat.last), prompt='My data:\n'+JSON.stringify(ctx)+'\n\nQuestion: '+q;
     try{
       let txt;
       if(prov==='gemini'){
-        const body=JSON.stringify({systemInstruction:{parts:[{text:AI_SYS}]},contents:[{role:'user',parts:[{text:prompt}]}],generationConfig:{maxOutputTokens:2000}});
+        const contents=hist.map(m=>({role:m.r==='u'?'user':'model',parts:[{text:m.t}]})).concat([{role:'user',parts:[{text:prompt}]}]);
+        const body=JSON.stringify({systemInstruction:{parts:[{text:AI_SYS}]},contents,generationConfig:{maxOutputTokens:2000}});
         let res, j;
         outer: for(const model of GEMINI_MODELS){
           for(let attempt=0; attempt<2; attempt++){
@@ -2395,7 +2470,7 @@
             if(res.ok) break outer;
             if([404,429].includes(res.status)) break;            // not available / quota: try next model
             if(![500,503].includes(res.status)) break outer;     // real error: stop
-            out.textContent='Gemini is busy, trying again…';
+            aiStatus('Gemini is busy, trying again…');
             await new Promise(r=>setTimeout(r,1200));
           }
         }
@@ -2404,14 +2479,26 @@
         txt=parts.map(x=>x.text||'').join('\n');
         if(!txt) throw new Error('Empty response (it may have been blocked)');
       } else {
+        const messages=hist.map(m=>({role:m.r==='u'?'user':'assistant',content:m.t})).concat([{role:'user',content:prompt}]);
         const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'content-type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-          body:JSON.stringify({model:AI_MODEL,max_tokens:1000,system:AI_SYS,messages:[{role:'user',content:prompt}]})});
+          body:JSON.stringify({model:AI_MODEL,max_tokens:1000,system:AI_SYS,messages})});
         const j=await res.json();
         if(!res.ok) throw new Error((j.error&&j.error.message)||('Error '+res.status));
         txt=(j.content||[]).filter(c=>c.type==='text').map(c=>c.text).join('\n');
       }
-      out.innerHTML=escapeHtml(txt).replace(/\*\*(.+?)\*\*/g,'<b>$1</b>');
-    }catch(e){ out.textContent='Could not get an answer: '+e.message; }
+      const rf=ctx.rowsFilter, show=rf.keywords.length||rf.label!=='selected period'||rf.reused;
+      const info=show?'Used: '+(rf.reused?'same data as before · ':'')+(rf.keywords.length?rf.keywords.join(', ')+' · ':'')+rf.label+' ('+rf.from+' → '+rf.to+') · '+ctx.totals.expenseCount+' expenses':'';
+      chat.msgs.push({r:'a',t:txt,i:info}); while(chat.msgs.length>40) chat.msgs.splice(0,2);
+      chat.last={from:rf.from,to:rf.to,keywords:rf.keywords,label:rf.label}; chat.t=Date.now();
+      aiChats=aiChats.filter(c=>c!==chat); aiChats.unshift(chat); aiSaveChats();
+      renderAiThread(null,true);
+    }catch(e){
+      chat.msgs.pop();
+      if(!chat.msgs.length){ aiChats=aiChats.filter(c=>c!==chat); if(aiCur===chat.id) aiCur=null; }
+      aiSaveChats(); renderAiThread();
+      const qe2=document.getElementById('aiQ'); if(qe2&&!qe2.value) qe2.value=q;
+      const er=document.getElementById('aiErr'); if(er) er.textContent='Could not get an answer: '+e.message;
+    }
     setAiBusy(false);
   }
   function setAiBusy(b){
@@ -2421,19 +2508,22 @@
     document.querySelectorAll('#aiChips .chip-opt').forEach(c=>{ c.disabled=b; c.style.opacity=b?'.5':''; });
   }
   function renderInsAi(){
-    const w=document.getElementById('insAi'), prov=aiProv(), P=AI_PROVS[prov], key=localStorage.getItem(P.key);
+    const w=document.getElementById('insAi'), prov=aiProv(), P=AI_PROVS[prov], key=localStorage.getItem(P.key); aiLoad();
     const provRow=`<div class="chip-row" id="aiProvRow" style="margin-bottom:10px;">${Object.entries(AI_PROVS).map(([k,v])=>`<button class="chip-opt ${k===prov?'sel':''}" data-p="${k}">${v.label}</button>`).join('')}</div>`;
     let body;
     if(!key){
       body=`<div class="rec-item" style="display:block;"><div style="font-size:13px;color:var(--text-dim);line-height:1.5;margin-bottom:10px;">Add your ${P.label} API key in Settings to ask questions about your money.</div><button class="btn primary full" id="aiOpenSettings">Open Settings</button></div>`;
     } else {
-      body=`<div class="chip-row" id="aiChips">${['Summarize this period','Where can I save money?','Spot unusual spending','Do my balances look right?'].map(c=>`<button class="chip-opt">${c}</button>`).join('')}</div><textarea id="aiQ" rows="2" placeholder="Ask anything about your spending…" style="${FIELD_CSS} margin-top:10px; resize:none;"></textarea><button class="btn primary full" id="aiAsk" style="margin-top:10px;">Ask ${P.label}</button><div id="aiOut" style="margin-top:12px;font-size:14px;line-height:1.55;white-space:pre-wrap;"></div>`;
+      body=`<div class="chip-row" style="margin-bottom:10px;"><button class="chip-opt" id="aiNew">＋ New chat</button><button class="chip-opt ${aiShowHist?'sel':''}" id="aiHistBtn">History (${aiChats.length})</button></div><div id="aiHist"></div><div id="aiThread"></div><div class="chip-row" id="aiChips">${['Summarize this period','Where can I save money?','Spot unusual spending','Do my balances look right?'].map(c=>`<button class="chip-opt">${c}</button>`).join('')}</div><textarea id="aiQ" rows="2" placeholder="Ask anything, or a follow-up…" style="${FIELD_CSS} margin-top:10px; resize:none;"></textarea><button class="btn primary full" id="aiAsk" style="margin-top:10px;">Ask ${P.label}</button><div id="aiErr" style="font-size:13px;color:var(--danger);margin-top:8px;"></div><div style="font-size:11.5px;color:var(--text-faint);margin-top:8px;">Asking sends the matching transactions (with notes) to the AI provider. Chats are saved on this device only.</div>`;
     }
     w.innerHTML=provRow+body;
     w.querySelectorAll('#aiProvRow button').forEach(b=> b.onclick=()=>{ if(aiBusy) return; localStorage.setItem(AI_PROV_KEY,b.dataset.p); renderInsAi(); });
     if(!key){ document.getElementById('aiOpenSettings').onclick=()=>{ renderSettingsAi(); openModal('settingsModalBg'); }; return; }
-    w.querySelectorAll('#aiChips .chip-opt').forEach(b=> b.onclick=()=>{ if(aiBusy) return; document.getElementById('aiQ').value=b.textContent; askAI(b.textContent); });
+    w.querySelectorAll('#aiChips .chip-opt').forEach(b=> b.onclick=()=>{ if(aiBusy) return; askAI(b.textContent,true); });
     document.getElementById('aiAsk').onclick=()=>{ const q=document.getElementById('aiQ').value.trim(); if(!q){ toast('Type a question first'); return; } askAI(q); };
+    document.getElementById('aiNew').onclick=()=>{ if(aiBusy) return; aiCur=null; aiShowHist=false; aiSaveChats(); renderInsAi(); };
+    document.getElementById('aiHistBtn').onclick=()=>{ if(aiBusy) return; aiShowHist=!aiShowHist; document.getElementById('aiHistBtn').classList.toggle('sel',aiShowHist); renderAiHist(); };
+    renderAiHist(); renderAiThread(aiBusy?'Thinking…':null);
     setAiBusy(aiBusy);
   }
   function renderSettingsAi(){
