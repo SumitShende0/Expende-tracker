@@ -162,7 +162,11 @@
   .linked-chip .info .meta{font-size:11.5px; color:var(--text-faint); margin-top:1px;}
   .linked-chip button{color:var(--text-faint); font-size:12px; flex-shrink:0; padding:4px 8px; border-radius:6px; background:rgba(255,255,255,0.08);}
 
-  .filter-toggle-btn{display:flex; align-items:center; gap:6px; padding:8px 14px; border-radius:20px; background:rgba(255,255,255,0.055); -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px); border:1px solid var(--glass-border); font-size:13px; margin-bottom:12px;}
+  .filter-row{display:flex; align-items:center; gap:8px; margin-bottom:12px;}
+  .filter-toggle-btn{display:flex; align-items:center; gap:6px; padding:8px 14px; border-radius:20px; background:rgba(255,255,255,0.055); -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px); border:1px solid var(--glass-border); font-size:13px;}
+  .filter-x-btn{width:34px; height:34px; border-radius:50%; display:none; align-items:center; justify-content:center; background:rgba(255,255,255,0.055); -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px); border:1px solid var(--glass-border); color:var(--text-dim);}
+  .filter-x-btn.show{display:flex;}
+  .modal .filter-panel{display:block; background:none; border:none; padding:0; margin:0; -webkit-backdrop-filter:none; backdrop-filter:none;}
   .filter-toggle-btn.active{border-color:var(--accent); color:var(--accent);}
   .filter-panel{background:var(--glass-bg); -webkit-backdrop-filter:blur(16px) saturate(160%); backdrop-filter:blur(16px) saturate(160%); border:1px solid var(--glass-border); border-radius:14px; padding:14px; margin-bottom:14px; display:none;}
   .filter-panel.show{display:block;}
@@ -185,7 +189,13 @@
   .iou-item .linked{font-size:11.5px; color:var(--text-dim); margin-top:8px; padding-top:8px; border-top:1px dashed var(--border);}
   .iou-item .actions{display:flex; gap:8px; margin-top:10px;}
 
-  nav.bottomnav{position:fixed; left:16px; right:16px; bottom:calc(14px + env(safe-area-inset-bottom)); border-radius:28px; background:var(--glass-bg); -webkit-backdrop-filter:blur(22px) saturate(180%); backdrop-filter:blur(22px) saturate(180%); border:1px solid var(--glass-border); box-shadow:0 14px 34px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.06); display:flex; padding:7px 5px; z-index:50;}
+  nav.bottomnav{position:fixed; left:16px; right:16px; bottom:calc(14px + env(safe-area-inset-bottom)); border-radius:28px; background:var(--glass-bg); -webkit-backdrop-filter:blur(22px) saturate(180%); backdrop-filter:blur(22px) saturate(180%); border:1px solid var(--glass-border); box-shadow:0 14px 34px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.06); display:flex; padding:7px 5px; z-index:50; transition:left .32s cubic-bezier(.34,1.2,.64,1), padding .2s ease, border-radius .2s ease;}
+  nav.bottomnav .nav-mini{display:none;}
+  nav.bottomnav.mini{left:calc(100% - 70px); width:54px; height:54px; padding:0; border-radius:50%; align-items:center; justify-content:center;}
+  nav.bottomnav.mini .navbtn{display:none;}
+  nav.bottomnav.mini .nav-mini{display:flex;}
+  nav.bottomnav .nav-mini{flex:none; width:54px; height:54px; padding:0; border-radius:50%;}
+  nav.bottomnav .nav-mini .nav-pill{width:42px; height:42px; padding:0; border-radius:50%; justify-content:center; background:linear-gradient(135deg,var(--accent),var(--accent-dim)); color:#0B1710;}
   nav.bottomnav button{flex:1; display:flex; align-items:center; justify-content:center; padding:2px; color:var(--text-faint); background:none;}
   .nav-pill{display:flex; flex-direction:column; align-items:center; gap:2px; padding:7px 8px 6px; border-radius:16px; transition:background .2s ease, color .2s ease;}
   nav.bottomnav button.active .nav-pill{background:linear-gradient(135deg,var(--accent),var(--accent-dim)); color:#0B1710;}
@@ -253,20 +263,7 @@
 
   <section class="view" id="view-daily">
     <div class="section-label" style="margin-top:14px">Daily ledger</div>
-    <button class="filter-toggle-btn" id="filterToggleBtn">⚙ Filter</button>
-    <div class="filter-panel" id="filterPanel">
-      <div class="fp-label">Type</div><div class="chip-row" id="filterTypeRow"></div>
-      <div class="fp-label">Category</div><div class="chip-row" id="filterCatRow"></div>
-      <div class="fp-label">Account</div><div class="chip-row" id="filterAcctRow"></div>
-      <div class="fp-label">Mode</div><div class="chip-row" id="filterModeRow"></div>
-      <div class="fp-label">Search</div><div class="field"><input type="search" id="filterQ" placeholder="Note, category, account…"></div>
-      <div class="fp-label">Amount (₹)</div><div class="row2"><div class="field"><input type="number" id="filterMin" placeholder="Min"></div><div class="field"><input type="number" id="filterMax" placeholder="Max"></div></div>
-      <div class="fp-label">Quick range</div><div class="chip-row" id="filterPresetRow"></div>
-      <div class="fp-label">Date range</div>
-      <div class="field"><input type="date" id="filterFrom"></div>
-      <div class="field"><input type="date" id="filterTo"></div>
-      <button class="btn full" id="filterClearBtn" style="margin-top:12px;">Clear filters</button>
-    </div>
+    <div class="filter-row"><button class="filter-toggle-btn" id="filterToggleBtn">⚙ Filter</button><button class="filter-x-btn" id="filterXBtn" title="Remove filters" aria-label="Remove filters"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button></div>
     <div class="filter-total-banner" id="filterBanner" style="display:none;"></div>
     <div id="filterChart"></div>
     <div id="dailyList"></div>
@@ -397,7 +394,8 @@
   <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
 </button>
 
-<nav class="bottomnav">
+<nav class="bottomnav" id="bottomNav">
+  <button class="nav-mini" id="navMiniBtn" title="Open menu" aria-label="Open menu"><span class="nav-pill"><span class="ic"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg></span></span></button>
   <button data-view="monthly" class="navbtn active"><span class="nav-pill"><span class="ic"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg></span><span class="lb">Monthly</span></span></button>
   <button data-view="daily" class="navbtn"><span class="nav-pill"><span class="ic"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg></span><span class="lb">Daily</span></span></button>
   <button data-view="cards" class="navbtn"><span class="nav-pill"><span class="ic"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect><line x1="1" y1="10" x2="23" y2="10"></line></svg></span><span class="lb">Cards</span></span></button>
@@ -406,6 +404,23 @@
 </nav>
 
 <!-- Transaction Modal (Add/Edit) -->
+<div class="modal-bg" id="filterModalBg">
+  <div class="modal">
+    <div class="modal-head"><button class="modal-cancel-btn" id="filterClearBtn">Clear</button><h2>Filters</h2><button class="modal-action-btn" data-close="filterModalBg">Done</button></div>
+    <div class="filter-panel">
+      <div class="fp-label">Type</div><div class="chip-row" id="filterTypeRow"></div>
+      <div class="fp-label">Category</div><div class="chip-row" id="filterCatRow"></div>
+      <div class="fp-label">Account</div><div class="chip-row" id="filterAcctRow"></div>
+      <div class="fp-label">Mode</div><div class="chip-row" id="filterModeRow"></div>
+      <div class="fp-label">Search</div><div class="field"><input type="search" id="filterQ" placeholder="Note, category, account…"></div>
+      <div class="fp-label">Amount (₹)</div><div class="row2"><div class="field"><input type="number" id="filterMin" placeholder="Min"></div><div class="field"><input type="number" id="filterMax" placeholder="Max"></div></div>
+      <div class="fp-label">Quick range</div><div class="chip-row" id="filterPresetRow"></div>
+      <div class="fp-label">Date range</div>
+      <div class="row2"><div class="field"><input type="date" id="filterFrom"></div><div class="field"><input type="date" id="filterTo"></div></div>
+    </div>
+  </div>
+</div>
+
 <div class="modal-bg" id="txModalBg">
   <div class="modal">
     <div class="modal-head"><button class="modal-cancel-btn" data-close="txModalBg">Cancel</button><h2 id="txModalTitle">Add expense</h2><button class="modal-action-btn" id="saveTxBtn">Save</button></div>
@@ -900,10 +915,12 @@
     let navKey = v;
     if(v==='splitPerson') navKey = 'split';
     else if(v==='accountDetail') navKey = (analyticsScope && analyticsScope.type==='account') ? 'cards' : 'monthly';
-    else if(v==='insights') navKey = 'monthly';
+    else if(v==='insights') navKey = null;
     else if(v==='monthDetail') navKey = (monthDetailContext && monthDetailContext.scope.type==='account') ? 'cards' : 'monthly';
     document.querySelectorAll('.navbtn').forEach(b=>b.classList.toggle('active', b.dataset.view===navKey));
     const fabBtn = document.getElementById('fabAdd');
+    fabBtn.style.display = (v==='insights') ? 'none' : '';
+    document.getElementById('bottomNav').classList.toggle('mini', v==='insights');
     fabBtn.title = v==='split' ? 'Add person' : v==='splitPerson' ? 'Add transaction' : 'Add expense / income';
     if(v==='monthly') renderMonthly();
     if(v==='daily') renderDaily();
@@ -916,6 +933,21 @@
     if(v==='insights') renderInsights();
   }
   document.querySelectorAll('.navbtn').forEach(b=> b.onclick = ()=> showView(b.dataset.view));
+  // In Insights/AI the nav collapses to one icon on the right; tap to expand, tap elsewhere to collapse again.
+  document.getElementById('navMiniBtn').onclick = ()=> document.getElementById('bottomNav').classList.remove('mini');
+  // Expanded nav in Insights/AI collapses back to the icon once the page is scrolled a little (not on tap).
+  // Note: html+body both have overflow-x:hidden, so the BODY is the real scroller — read every candidate.
+  function pageScrollY(e){
+    const t = e && e.target;
+    return Math.max(window.scrollY||0, document.body.scrollTop||0, document.documentElement.scrollTop||0, (t && t.scrollTop)||0);
+  }
+  let navScrollY = 0;
+  document.getElementById('navMiniBtn').addEventListener('click', ()=>{ navScrollY = pageScrollY(); });
+  window.addEventListener('scroll', (e)=>{
+    const nav = document.getElementById('bottomNav');
+    if(currentView!=='insights' || nav.classList.contains('mini')) return;
+    if(Math.abs(pageScrollY(e) - navScrollY) > 24) nav.classList.add('mini');
+  }, {passive:true, capture:true});
   document.getElementById('fabAdd').onclick = ()=>{
     if(currentView==='split') openPersonModal(null);
     else if(currentView==='splitPerson') openIouModal(null, personDetailId);
@@ -1031,11 +1063,25 @@
     return ends.length===1 ? ends[0] : null;
   }
   document.getElementById('filterToggleBtn').onclick = ()=>{
-    const panel = document.getElementById('filterPanel');
-    panel.classList.toggle('show');
-    document.getElementById('filterToggleBtn').classList.toggle('active', panel.classList.contains('show'));
-    if(panel.classList.contains('show')) renderFilterPanel();
+    renderFilterPanel();
+    openModal('filterModalBg');
   };
+  function filterCount(){
+    return filterState.types.size + filterState.cats.size + filterState.accts.size + filterState.modes.size
+      + ((filterState.from||filterState.to)?1:0) + (filterState.q?1:0) + ((filterState.min!==''||filterState.max!=='')?1:0);
+  }
+  function updateFilterBtn(){
+    const on = !!filterActive(), n = filterCount();
+    const btn = document.getElementById('filterToggleBtn');
+    btn.classList.toggle('active', on);
+    btn.textContent = '⚙ Filter' + (on && n ? ' · '+n : '');
+    document.getElementById('filterXBtn').classList.toggle('show', on);
+  }
+  function clearFilters(){
+    filterState={types:new Set(),cats:new Set(),accts:new Set(),modes:new Set(),from:'',to:'',q:'',min:'',max:''};
+    renderFilterPanel(); renderDaily();
+  }
+  document.getElementById('filterXBtn').onclick = clearFilters;
   function renderFilterPanel(){
     const typeRow=document.getElementById('filterTypeRow');
     typeRow.innerHTML = [['expense','Expense'],['income','Income'],['transfer','Transfer']].map(([v,l])=>`<button class="chip-opt ${filterState.types.has(v)?'sel':''}" data-t="${v}">${l}</button>`).join('');
@@ -1072,7 +1118,7 @@
   }
   document.getElementById('filterFrom').onchange = (e)=>{ filterState.from=e.target.value; renderDaily(); };
   document.getElementById('filterTo').onchange = (e)=>{ filterState.to=e.target.value; renderDaily(); };
-  document.getElementById('filterClearBtn').onclick = ()=>{ filterState={types:new Set(),cats:new Set(),accts:new Set(),modes:new Set(),from:'',to:'',q:'',min:'',max:''}; renderFilterPanel(); renderDaily(); };
+  document.getElementById('filterClearBtn').onclick = clearFilters;
 
   // ---------- DAILY ----------
   function txnRowHtml(t){
@@ -1153,6 +1199,7 @@
   function renderDaily(){
     const wrap = document.getElementById('dailyList');
     const banner = document.getElementById('filterBanner');
+    updateFilterBtn();
     const base = applyFilters(data.transactions);
     const incomeBase = applyFiltersIncome(data.incomes);
     const transferBase = applyFiltersTransfer(data.transfers);
