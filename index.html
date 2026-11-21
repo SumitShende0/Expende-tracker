@@ -2366,7 +2366,7 @@
     document.getElementById('insList').innerHTML=insTips(D).map(t=>`<div class="rec-item" style="font-size:13.5px;line-height:1.45;display:block;">${escapeHtml(t)}</div>`).join('');
     renderInsAi();
   }
-  const AI_STOP=new Set('the and for with from about all list show give tell what how much many did does spend spent spending expense expenses transaction transactions transfer transfers income incomes this last past previous month months week weeks year years today yesterday please total every each any entry entries paid pay summarize summary compare between into over under than more less have has had was were are can you could would should where when which who why top most least biggest highest lowest average per days day january february march april may june july august september october november december'.split(' '));
+  const AI_STOP=new Set('the and for with from about all list show give tell what how much many did does spend spent spending expense expenses transaction transactions transfer transfers income incomes this last past previous month months week weeks year years today yesterday please total every each any entry entries paid pay summarize summary compare between into over under than more less have has had was were are can you could would should where when which who why top most least biggest highest lowest average per days day own mine myself other others someone people ones them their they that these those there here also not only both january february march april may june july august september october november december'.split(' '));
   const AI_MONTHS=['january','february','march','april','may','june','july','august','september','october','november','december'];
   function aiRange(q){
     const t=q.toLowerCase(), now=new Date(), y=now.getFullYear(), m=now.getMonth(), d=now.getDate(), L=(a,b,c)=>lIso(new Date(a,b,c)); let mm;
@@ -2386,11 +2386,11 @@
   }
   function aiKeywords(q){
     const vocab=new Set();
-    const add=x=>String(x||'').toLowerCase().split(/[^a-z0-9\u0900-\u097f]+/).forEach(w=>{ if(w.length>=3) vocab.add(w); });
+    const add=x=>String(x||'').toLowerCase().split(/[^a-z0-9\u0900-\u097f]+/).forEach(w=>{ if(w.length>=3||(w.length===2&&/\d/.test(w))) vocab.add(w); });
     data.transactions.forEach(t=>{ add(t.note); add(t.category); }); data.incomes.forEach(i=>add(i.name)); data.accounts.forEach(a=>add(a.name));
     const out=new Set();
     q.toLowerCase().split(/[^a-z0-9\u0900-\u097f]+/).forEach(w=>{
-      if(w.length<3||AI_STOP.has(w)) return;
+      if((w.length<3&&!(w.length===2&&/\d/.test(w)))||AI_STOP.has(w)) return;
       vocab.forEach(v=>{ if(v===w || (w.length>=4 && v.length>=4 && (v.startsWith(w)||w.startsWith(v)))) out.add(v); });
     });
     return [...out];
@@ -2398,7 +2398,7 @@
   function aiContext(q,raw,prev){
     const D=insData(), CAP=400;
     const R=(!raw&&q)?aiRange(q):null, kw0=(!raw&&q)?aiKeywords(q):[];
-    const reuse=!!(!raw&&!R&&!kw0.length&&prev), kw=reuse?prev.keywords:kw0, filtered=!!R||kw.length>0||reuse;
+    const reuse=!!(!raw&&!R&&!kw0.length&&prev), kw=(!raw&&prev)?[...new Set([...prev.keywords,...kw0])]:kw0, filtered=!!R||kw.length>0||reuse;
     const S=R?R[0]:(reuse?prev.from:D.S), E=R?R[1]:(reuse?prev.to:D.E), lbl=R?R[2]:(reuse?prev.label:'selected period'), inR=x=>x.date>=S&&x.date<=E;
     const hit=txt=>!kw.length||kw.some(k=>String(txt).toLowerCase().includes(k));
     const ex=data.transactions.filter(t=>inR(t)&&hit([t.note,t.category,acctName(t.accountId),t.mode].join(' '))).sort((x,y)=>y.date.localeCompare(x.date));
