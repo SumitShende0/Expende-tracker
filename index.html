@@ -2387,7 +2387,7 @@
   function aiKeywords(q){
     const vocab=new Set();
     const add=x=>String(x||'').toLowerCase().split(/[^a-z0-9\u0900-\u097f]+/).forEach(w=>{ if(w.length>=3||(w.length===2&&/\d/.test(w))) vocab.add(w); });
-    data.transactions.forEach(t=>{ add(t.note); add(t.category); }); data.incomes.forEach(i=>add(i.name)); data.accounts.forEach(a=>add(a.name));
+    data.transactions.forEach(t=>{ add(t.note); add(t.category); }); data.incomes.forEach(i=>add(i.name)); data.accounts.forEach(a=>add(a.name)); data.people.forEach(p=>add(p.name));
     const out=new Set();
     q.toLowerCase().split(/[^a-z0-9\u0900-\u097f]+/).forEach(w=>{
       if((w.length<3&&!(w.length===2&&/\d/.test(w)))||AI_STOP.has(w)) return;
@@ -2401,13 +2401,15 @@
     const reuse=!!(!raw&&!R&&!kw0.length&&prev), kw=(!raw&&prev)?[...new Set([...prev.keywords,...kw0])]:kw0, filtered=!!R||kw.length>0||reuse;
     const S=R?R[0]:(reuse?prev.from:D.S), E=R?R[1]:(reuse?prev.to:D.E), lbl=R?R[2]:(reuse?prev.label:'selected period'), inR=x=>x.date>=S&&x.date<=E;
     const hit=txt=>!kw.length||kw.some(k=>String(txt).toLowerCase().includes(k));
-    const ex=data.transactions.filter(t=>inR(t)&&hit([t.note,t.category,acctName(t.accountId),t.mode].join(' '))).sort((x,y)=>y.date.localeCompare(x.date));
+    const iouBy={}; data.ious.forEach(i=>{ if(i.linkedTxnId) (iouBy[i.linkedTxnId]=iouBy[i.linkedTxnId]||[]).push(i); });
+    const splitsOf=t=>(iouBy[t.id]||[]).map(i=>[personName(i.personId),i.type==='owed_to_me'?'they owe me':'I owe them',Number(i.amount),!!i.settled,i.settled?(i.settledDate||''):'',i.settled?(i.noSettleTxn?'same account':acctName(i.settledAccountId)):'']);
+    const ex=data.transactions.filter(t=>inR(t)&&hit([t.note,t.category,acctName(t.accountId),t.mode].concat((iouBy[t.id]||[]).map(i=>personName(i.personId))).join(' '))).sort((x,y)=>y.date.localeCompare(x.date));
     const inc=data.incomes.filter(i=>inR(i)&&hit([i.name,acctName(i.accountId)].join(' '))).sort((x,y)=>y.date.localeCompare(x.date)).slice(0,150);
     const xf=data.transfers.filter(t=>inR(t)&&hit([t.note,acctName(t.fromAccountId),acctName(t.toAccountId)].join(' '))).sort((x,y)=>y.date.localeCompare(x.date)).slice(0,150);
     const ctx={today:lIso(D.now),currency:'INR',rowsFilter:{from:S,to:E,keywords:kw,label:lbl,reused:reuse},
       totals:{spent:sumAmt(ex),income:sumAmt(inc),expenseCount:ex.length},spendByCategory:groupAmt(ex,t=>t.category||'Other'),
-      expenseColumns:['date','category','note','amount','account','mode'],
-      expenses:ex.slice(0,CAP).map(t=>[t.date,t.category||'',t.note||'',Number(t.amount),acctName(t.accountId),t.mode||'']),expensesTruncated:ex.length>CAP,
+      expenseColumns:['date','category','note','amount','account','mode','splits'],splitColumns:['person','direction','amount','settled','settledDate','settledAccount'],
+      expenses:ex.slice(0,CAP).map(t=>[t.date,t.category||'',t.note||'',Number(t.amount),acctName(t.accountId),t.mode||'',splitsOf(t)]),expensesTruncated:ex.length>CAP,
       incomeColumns:['date','name','amount','account'],incomes:inc.map(i=>[i.date,i.name||'',Number(i.amount),acctName(i.accountId)]),
       transferColumns:['date','from','to','amount','note'],transfers:xf.map(t=>[t.date,acctName(t.fromAccountId),acctName(t.toAccountId),Number(t.amount),t.note||'']),
       accounts:data.accounts.map(a=>({name:a.name,type:a.type,startingBalance:a.startingBalance,balance:getBalance(a)}))};
@@ -2416,7 +2418,7 @@
   }
   const AI_PROVS={claude:{label:'Claude',key:'ledgerAiKey_v1',ph:'sk-ant-…',url:'console.anthropic.com'},gemini:{label:'Gemini',key:'ledgerGeminiKey_v1',ph:'AIza…',url:'aistudio.google.com/apikey'}};
   const GEMINI_MODELS=['gemini-3.5-flash-lite','gemini-3.8-flash','gemini-3.5-flash'], AI_PROV_KEY='ledgerAiProvider_v1';
-  const AI_SYS='You are a concise personal-finance assistant inside an Indian expense tracker (amounts in INR). Use only the JSON provided. The rows (see the *Columns fields; dates are YYYY-MM-DD) are already filtered by rowsFilter: the date range, and the keywords if any (matched against note, category and account). So list every row given when asked to list, with date, amount and note, then the total. Do not say data is missing because of the filter. If expensesTruncated is true, say older rows may be missing. Give short, concrete answers. Never invent transactions; if the data is not enough, say what is missing. This is an ongoing conversation: earlier turns contain only the questions and answers, and the data in the latest message is the current data to use for follow-up questions.';
+  const AI_SYS='You are a concise personal-finance assistant inside an Indian expense tracker (amounts in INR). Use only the JSON provided. The rows (see the *Columns fields; dates are YYYY-MM-DD) are already filtered by rowsFilter: the date range, and the keywords if any (matched against note, category and account). So list every row given when asked to list, with date, amount and note, then the total. Do not say data is missing because of the filter. If expensesTruncated is true, say older rows may be missing. Give short, concrete answers. Never invent transactions; if the data is not enough, say what is missing. The last column of each expense, splits, lists the split/IOU rows linked to it (see splitColumns): the direction they owe me means the part paid on behalf of that person, so the own share of the user is the amount minus the they-owe-me parts; an empty list means no split. This is an ongoing conversation: earlier turns contain only the questions and answers, and the data in the latest message is the current data to use for follow-up questions.';
   function aiProv(){ const p=localStorage.getItem(AI_PROV_KEY); return AI_PROVS[p]?p:'claude'; }
   // ---------- AI CHATS (saved on this device only, never in backups) ----------
   const AI_CHATS_KEY='ledgerAiChats_v1';
