@@ -862,7 +862,7 @@
     // Don't call closeModal() here: it fires history.back(), which can cancel the reload.
     // The old data then stays in memory and the next save() writes it straight back.
     localStorage.removeItem(STORE_KEY);
-    localStorage.removeItem('ledger_sync_at'); localStorage.removeItem('ledger_sync_dirty');
+    localStorage.removeItem('ledger_sync_at'); localStorage.removeItem('ledger_sync_dirty'); localStorage.removeItem('ledger_gd_token');
     data = load();   // blank in memory too, so nothing can re-save the old data
     document.querySelectorAll('.modal-bg.show').forEach(bg=> bg.classList.remove('show'));
     location.reload();
@@ -3351,28 +3351,53 @@
       document.head.appendChild(sc);
     });
   }
+  const GD_SCOPE = 'https://www.googleapis.com/auth/drive.appdata';
+  function gdReq(cid, prompt, hint){
+    return new Promise((res,rej)=>{
+      const cfg = {
+        client_id: cid, scope: GD_SCOPE,
+        callback: (r)=>{ if(r.error) return rej(new Error(r.error_description || r.error)); res(r); },
+        error_callback: (e)=> rej(new Error(e && e.type==='popup_closed' ? 'Sign-in cancelled' : 'Google sign-in failed'))
+      };
+      if(prompt !== undefined) cfg.prompt = prompt;
+      if(hint) cfg.hint = hint;
+      google.accounts.oauth2.initTokenClient(cfg).requestAccessToken();
+    });
+  }
+  // Remember which Google account was used so later sign-ins can be silent.
+  async function gdLearnEmail(token){
+    try{
+      const r = await fetch('https://www.googleapis.com/drive/v3/about?fields=user(emailAddress)', {headers:{Authorization:'Bearer '+token}});
+      const j = await r.json();
+      if(j && j.user && j.user.emailAddress) localStorage.setItem('ledger_gd_hint', j.user.emailAddress);
+    }catch(e){}
+  }
   async function gdAuth(){
     const cid = (localStorage.getItem(GD_KEY)||'').trim();
     if(!cid) throw new Error('Paste your Google Client ID first');
+    // 1) Reuse the saved token while it is still valid (Google tokens last ~1 hour).
+    if(!gdToken){
+      try{ const c = JSON.parse(localStorage.getItem('ledger_gd_token')||'null'); if(c && c.cid===cid && c.exp>Date.now()){ gdToken=c.t; gdExp=c.exp; } }catch(e){}
+    }
     if(gdToken && Date.now() < gdExp - 30000) return gdToken;
     await gdLoadLib();
-    return new Promise((res,rej)=>{
-      const tc = google.accounts.oauth2.initTokenClient({
-        client_id: cid,
-        scope: 'https://www.googleapis.com/auth/drive.appdata',
-        callback: (r)=>{
-          if(r.error) return rej(new Error(r.error_description || r.error));
-          gdToken = r.access_token; gdExp = Date.now() + (Number(r.expires_in)||3600)*1000; res(gdToken);
-        },
-        error_callback: (e)=> rej(new Error(e && e.type==='popup_closed' ? 'Sign-in cancelled' : 'Google sign-in failed'))
-      });
-      tc.requestAccessToken();
-    });
+    // 2) Try a silent sign-in for the remembered account (short timeout so the normal prompt still counts as a tap).
+    const hint = localStorage.getItem('ledger_gd_hint') || '';
+    let r = null;
+    if(hint){
+      try{ r = await Promise.race([gdReq(cid,'none',hint), new Promise((_,rej)=> setTimeout(()=>rej(new Error('timeout')), 3500))]); }catch(e){ r = null; }
+    }
+    // 3) Fall back to the normal Google sign-in.
+    if(!r) r = await gdReq(cid, undefined, hint);
+    gdToken = r.access_token; gdExp = Date.now() + (Number(r.expires_in)||3600)*1000;
+    try{ localStorage.setItem('ledger_gd_token', JSON.stringify({t:gdToken, exp:gdExp, cid})); }catch(e){}
+    if(!hint) gdLearnEmail(gdToken);
+    return gdToken;
   }
   async function gdFetch(url, opts){
     const t = await gdAuth();
     const r = await fetch(url, {...(opts||{}), headers:{...((opts&&opts.headers)||{}), Authorization:'Bearer '+t}});
-    if(r.status===401){ gdToken = null; throw new Error('Google session expired — try again'); }
+    if(r.status===401){ gdToken = null; localStorage.removeItem('ledger_gd_token'); throw new Error('Google session expired — try again'); }
     if(!r.ok) throw new Error('Drive error ('+r.status+')');
     return r;
   }
@@ -3392,7 +3417,7 @@
   }
   function gdWhen(iso){ const d=new Date(iso); return d.toLocaleDateString('en-IN',{day:'numeric',month:'short'})+' at '+d.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'}); }
   function gdSetBusy(on){ gdBusy=on; ['gdBackupBtn','gdRestoreBtn'].forEach(id=>{ const b=document.getElementById(id); b.disabled=on; b.style.opacity=on?0.6:1; }); updateSyncUi(); }
-  document.getElementById('gdClientId').onchange = (e)=>{ localStorage.setItem(GD_KEY, e.target.value.trim()); gdToken=null; };
+  document.getElementById('gdClientId').onchange = (e)=>{ localStorage.setItem(GD_KEY, e.target.value.trim()); gdToken=null; localStorage.removeItem('ledger_gd_token'); localStorage.removeItem('ledger_gd_hint'); };
   async function gdBackupNow(){
     if(gdBusy) return;
     const cidEl = document.getElementById('gdClientId');
