@@ -54,6 +54,12 @@
   header.topbar{display:flex; align-items:center; justify-content:space-between; padding:12px 16px; position:fixed; top:calc(14px + env(safe-area-inset-top)); left:16px; right:16px; border-radius:26px; z-index:60; background:var(--glass-bg); -webkit-backdrop-filter:blur(24px) saturate(190%); backdrop-filter:blur(24px) saturate(190%); border:1px solid var(--glass-border); box-shadow:0 10px 28px rgba(0,0,0,.32), inset 0 1px 0 rgba(255,255,255,.08);}
   .brand{display:flex; align-items:center; gap:9px;}
   .brand .mark{width:30px; height:30px; border-radius:8px; background:linear-gradient(135deg,var(--accent),#2E9C6E); display:flex; align-items:center; justify-content:center; font-family:var(--font-mono); font-weight:600; color:#0B1710; font-size:14px; box-shadow:0 3px 10px rgba(74,222,154,.4);}
+  .brand .sync-sub{font-size:10.5px; color:var(--text-faint); margin-top:2px; line-height:1; white-space:nowrap;}
+  .brand .sync-sub.dirty{color:var(--amber);}
+  #syncBtn{position:relative;}
+  #syncBtn.dirty::after{content:''; position:absolute; top:5px; right:5px; width:8px; height:8px; border-radius:50%; background:var(--amber);}
+  #syncBtn.spin svg{animation:syncspin 1s linear infinite;}
+  @keyframes syncspin{to{transform:rotate(360deg)}}
   .brand h1{font-family:var(--font-display); font-size:19px; font-weight:700; letter-spacing:-0.02em;}
   .icon-btn{width:38px; height:38px; border-radius:10px; background:rgba(255,255,255,0.06); -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px); border:1px solid var(--glass-border); display:flex; align-items:center; justify-content:center; font-size:16px;}
   .topbar-actions{display:flex; gap:8px;}
@@ -231,10 +237,10 @@
 <div class="bg-blobs"></div>
 
 <header class="topbar">
-  <div class="brand"><div class="mark">₹</div><h1>Ledger</h1></div>
+  <div class="brand"><div class="mark">₹</div><div><h1>Ledger</h1><div class="sync-sub" id="syncSub"></div></div></div>
   <div class="topbar-actions">
     <button class="icon-btn" id="insightsBtn" title="Insights &amp; AI" style="font-size:16px;">✨</button>
-    <button class="icon-btn" id="quickBackupBtn" title="Import / Export JSON"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"></path></svg></button>
+    <button class="icon-btn" id="syncBtn" title="Sync to Google Drive" aria-label="Sync to Google Drive"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg></button>
     <button class="icon-btn" id="settingsBtn" title="Settings"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></button>
   </div>
 </header>
@@ -599,7 +605,7 @@
       <button class="rec-item" id="settingsBackupBtn" style="width:100%; text-align:left;">
         <div style="display:flex; align-items:center; gap:12px;">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"></path></svg>
-          <div><div class="name">Import / Export (JSON)</div><div class="meta">Full backup — save or reload everything</div></div>
+          <div><div class="name">Import / Export (JSON)</div><div class="meta">Full backup — JSON file or Google Drive</div></div>
         </div>
       </button>
       <button class="rec-item" id="settingsClearBtn" style="width:100%; text-align:left; border-color:var(--danger);">
@@ -764,7 +770,15 @@
   });
   if(migratedLegacyCycles) save();
 
-  function save(){ localStorage.setItem(STORE_KEY, JSON.stringify(data)); }
+  let suppressDirty = false, changeSeq = 0;
+  function save(){
+    localStorage.setItem(STORE_KEY, JSON.stringify(data));
+    if(!suppressDirty){
+      changeSeq++;
+      localStorage.setItem('ledger_sync_dirty','1');
+      try{ updateSyncUi(); }catch(e){}   // may run before the Drive code below has loaded
+    }
+  }
   function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
   function toast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),1800); }
   // Whole amounts show as ₹1,200; amounts with paise show both decimals (₹1,200.50).
@@ -787,6 +801,12 @@
     const wasAnyOpen = document.querySelector('.modal-bg.show');
     document.getElementById(id).classList.add('show');
     if(!wasAnyOpen) navPush({modal:true});
+  }
+  // Open one modal and hide another WITHOUT touching history. closeModal() followed by openModal()
+  // fires history.back() asynchronously, and its popstate then closes the modal that was just opened.
+  function switchModal(fromId, toId){
+    openModal(toId);
+    document.getElementById(fromId).classList.remove('show');
   }
   function closeModal(id){
     document.getElementById(id).classList.remove('show');
@@ -823,16 +843,14 @@
   });
 
   // ---------- SETTINGS ----------
-  document.getElementById('quickBackupBtn').onclick = ()=>{ renderLastBackupLabel(); openModal('backupModalBg'); };
   document.getElementById('settingsBtn').onclick = ()=>{ renderSettingsAi(); openModal('settingsModalBg'); };
   document.getElementById('settingsExportBtn').onclick = ()=>{ closeModal('settingsModalBg'); exportToExcel(); };
-  document.getElementById('settingsBackupBtn').onclick = ()=>{ closeModal('settingsModalBg'); renderLastBackupLabel(); openModal('backupModalBg'); };
+  document.getElementById('settingsBackupBtn').onclick = ()=>{ renderLastBackupLabel(); switchModal('settingsModalBg','backupModalBg'); };
   document.getElementById('settingsClearBtn').onclick = ()=>{
-    closeModal('settingsModalBg');
     document.getElementById('clearDataConfirmCheck').checked = false;
     const btn = document.getElementById('clearDataBtn');
     btn.disabled = true; btn.style.opacity = '.4';
-    openModal('clearDataModalBg');
+    switchModal('settingsModalBg','clearDataModalBg');
   };
   document.getElementById('clearDataConfirmCheck').onchange = (e)=>{
     const btn = document.getElementById('clearDataBtn');
@@ -841,8 +859,12 @@
   };
   document.getElementById('clearDataBtn').onclick = ()=>{
     if(document.getElementById('clearDataBtn').disabled) return;
+    // Don't call closeModal() here: it fires history.back(), which can cancel the reload.
+    // The old data then stays in memory and the next save() writes it straight back.
     localStorage.removeItem(STORE_KEY);
-    closeModal('clearDataModalBg');
+    localStorage.removeItem('ledger_sync_at'); localStorage.removeItem('ledger_sync_dirty');
+    data = load();   // blank in memory too, so nothing can re-save the old data
+    document.querySelectorAll('.modal-bg.show').forEach(bg=> bg.classList.remove('show'));
     location.reload();
   };
 
@@ -3287,7 +3309,7 @@
     renderLastBackupLabel();
     toast('Downloaded — your browser may save it as "ledger-backup (1).json" if one already exists; delete the older copy to avoid duplicates');
   };
-  async function restoreFromObject(parsed){
+  async function restoreFromObject(parsed, driveTime){
     if(!parsed || !Array.isArray(parsed.accounts) || !Array.isArray(parsed.transactions)){ toast('That file is not a valid backup'); return false; }
     const ok = await showConfirm('This will replace all current data in the app with this backup. Continue?', 'Restore');
     if(!ok) return false;
@@ -3298,6 +3320,7 @@
     parsed.categories = parsed.categories && parsed.categories.length ? parsed.categories : [...DEFAULT_CATEGORIES];
     parsed.cycles = parsed.cycles || {};
     localStorage.setItem(STORE_KEY, JSON.stringify(parsed));
+    if(driveTime){ localStorage.setItem('ledger_sync_at', driveTime); localStorage.setItem('ledger_sync_dirty','0'); }
     toast('Backup restored');
     setTimeout(()=> location.reload(), 600);
     return true;
@@ -3368,22 +3391,50 @@
     return r.json();
   }
   function gdWhen(iso){ const d=new Date(iso); return d.toLocaleDateString('en-IN',{day:'numeric',month:'short'})+' at '+d.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'}); }
-  function gdSetBusy(on){ gdBusy=on; ['gdBackupBtn','gdRestoreBtn'].forEach(id=>{ const b=document.getElementById(id); b.disabled=on; b.style.opacity=on?0.6:1; }); }
+  function gdSetBusy(on){ gdBusy=on; ['gdBackupBtn','gdRestoreBtn'].forEach(id=>{ const b=document.getElementById(id); b.disabled=on; b.style.opacity=on?0.6:1; }); updateSyncUi(); }
   document.getElementById('gdClientId').onchange = (e)=>{ localStorage.setItem(GD_KEY, e.target.value.trim()); gdToken=null; };
-  document.getElementById('gdBackupBtn').onclick = async ()=>{
+  async function gdBackupNow(){
     if(gdBusy) return;
-    localStorage.setItem(GD_KEY, document.getElementById('gdClientId').value.trim());
+    const cidEl = document.getElementById('gdClientId');
+    if(document.getElementById('backupModalBg').classList.contains('show')) localStorage.setItem(GD_KEY, cidEl.value.trim());
     const st = document.getElementById('gdStatus');
     gdSetBusy(true); st.textContent = 'Backing up…';
     try{
-      data.lastBackupAt = new Date().toISOString(); save();
+      const seq = changeSeq;
+      data.lastBackupAt = new Date().toISOString();
+      suppressDirty = true; save(); suppressDirty = false;
       const f = await gdFindFile();
       const res = await gdUpload(JSON.stringify(data), f && f.id);
+      localStorage.setItem('ledger_sync_at', res.modifiedTime || data.lastBackupAt);
+      if(changeSeq === seq) localStorage.setItem('ledger_sync_dirty','0');   // edits made mid-upload stay "not synced"
       st.textContent = 'Backed up to Drive ' + gdWhen(res.modifiedTime || data.lastBackupAt);
-      renderLastBackupLabel(); toast('Backed up to Google Drive');
-    }catch(err){ st.textContent = ''; toast(err.message || 'Backup failed'); }
+      renderLastBackupLabel(); toast('Synced to Google Drive');
+    }catch(err){ suppressDirty = false; st.textContent = ''; toast(err.message || 'Sync failed'); }
     gdSetBusy(false);
+  }
+  document.getElementById('gdBackupBtn').onclick = gdBackupNow;
+  document.getElementById('syncBtn').onclick = ()=>{
+    if(!(localStorage.getItem(GD_KEY)||'').trim()){ toast('Add your Google Client ID in Backup first'); renderLastBackupLabel(); openModal('backupModalBg'); return; }
+    gdBackupNow();
   };
+  function updateSyncUi(){
+    const btn = document.getElementById('syncBtn'), sub = document.getElementById('syncSub');
+    if(!btn || !sub) return;
+    const at = localStorage.getItem('ledger_sync_at'), dirty = localStorage.getItem('ledger_sync_dirty')==='1';
+    let txt, isDirty = false;
+    if(gdBusy) txt = 'Syncing…';
+    else if(!at){ txt = 'Not synced yet'; isDirty = true; }
+    else {
+      const d = new Date(at), today = new Date().toDateString()===d.toDateString();
+      const t = d.toLocaleTimeString('en-IN',{hour:'numeric',minute:'2-digit'});
+      const when = today ? t : d.toLocaleDateString('en-IN',{day:'numeric',month:'short'})+', '+t;
+      if(dirty){ txt = 'Not synced · tap ⟳'; isDirty = true; } else { txt = ''; btn.title = 'Synced ' + when; }
+    }
+    if(txt || !at || dirty || gdBusy) { if(isDirty || gdBusy) btn.title = 'Sync to Google Drive'; }
+    sub.textContent = txt; sub.style.display = txt ? '' : 'none'; sub.classList.toggle('dirty', isDirty && !gdBusy);
+    btn.classList.toggle('dirty', isDirty && !gdBusy); btn.classList.toggle('spin', !!gdBusy);
+  }
+  updateSyncUi();
   document.getElementById('gdRestoreBtn').onclick = async ()=>{
     if(gdBusy) return;
     localStorage.setItem(GD_KEY, document.getElementById('gdClientId').value.trim());
@@ -3395,7 +3446,7 @@
       const r = await gdFetch('https://www.googleapis.com/drive/v3/files/'+f.id+'?alt=media');
       const parsed = await r.json();
       st.textContent = 'Drive backup from ' + gdWhen(f.modifiedTime);
-      await restoreFromObject(parsed);
+      await restoreFromObject(parsed, f.modifiedTime);
     }catch(err){ st.textContent = ''; toast(err.message || 'Restore failed'); }
     gdSetBusy(false);
   };
