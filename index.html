@@ -573,6 +573,12 @@
       <button class="btn primary full" id="downloadBackupBtn" style="display:flex; align-items:center; justify-content:center; gap:8px;"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg> Export data (.json)</button>
       <div style="font-size:12px; color:var(--text-faint); text-align:center;" id="lastBackupLabel"></div>
       <div style="border-top:1px solid var(--border); margin:4px 0;"></div>
+      <div style="font-size:13px; font-weight:600;">Google Drive</div>
+      <div style="font-size:12px; color:var(--text-faint); line-height:1.5;">Saved privately in a hidden app folder in your Drive — only this app can see it. Each backup replaces the previous one.</div>
+      <div class="field"><label>Google Client ID (one-time setup)</label><input type="text" id="gdClientId" placeholder="xxxx.apps.googleusercontent.com" autocapitalize="off" autocomplete="off" spellcheck="false"></div>
+      <div class="row2"><button class="btn primary" id="gdBackupBtn">Back up to Drive</button><button class="btn" id="gdRestoreBtn">Restore from Drive</button></div>
+      <div style="font-size:12px; color:var(--text-faint); text-align:center;" id="gdStatus"></div>
+      <div style="border-top:1px solid var(--border); margin:4px 0;"></div>
       <div class="field"><label>Import from a JSON file</label><input type="file" id="restoreFileInput" accept="application/json"></div>
       <div style="font-size:12px; color:var(--text-faint);">Importing replaces everything currently in the app with the contents of the file.</div>
     </div>
@@ -3234,8 +3240,10 @@
   };
 
   // ---------- BACKUP & RESTORE ----------
+  const GD_KEY = 'ledger_gdrive_client_id';
   function renderLastBackupLabel(){
     const el = document.getElementById('lastBackupLabel');
+    document.getElementById('gdClientId').value = localStorage.getItem(GD_KEY) || '';
     if(data.lastBackupAt){
       const d = new Date(data.lastBackupAt);
       el.textContent = 'Last backed up ' + d.toLocaleDateString('en-IN',{day:'numeric',month:'short'}) + ' at ' + d.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
@@ -3279,6 +3287,21 @@
     renderLastBackupLabel();
     toast('Downloaded — your browser may save it as "ledger-backup (1).json" if one already exists; delete the older copy to avoid duplicates');
   };
+  async function restoreFromObject(parsed){
+    if(!parsed || !Array.isArray(parsed.accounts) || !Array.isArray(parsed.transactions)){ toast('That file is not a valid backup'); return false; }
+    const ok = await showConfirm('This will replace all current data in the app with this backup. Continue?', 'Restore');
+    if(!ok) return false;
+    parsed.incomes = parsed.incomes || [];
+    parsed.recurring = parsed.recurring || [];
+    parsed.ious = parsed.ious || [];
+    parsed.people = parsed.people || [];
+    parsed.categories = parsed.categories && parsed.categories.length ? parsed.categories : [...DEFAULT_CATEGORIES];
+    parsed.cycles = parsed.cycles || {};
+    localStorage.setItem(STORE_KEY, JSON.stringify(parsed));
+    toast('Backup restored');
+    setTimeout(()=> location.reload(), 600);
+    return true;
+  }
   document.getElementById('restoreFileInput').onchange = (e)=>{
     const file = e.target.files[0];
     if(!file) return;
@@ -3286,20 +3309,95 @@
     reader.onload = async ()=>{
       let parsed;
       try{ parsed = JSON.parse(reader.result); } catch(err){ toast('That file is not a valid backup'); e.target.value=''; return; }
-      if(!parsed || !Array.isArray(parsed.accounts) || !Array.isArray(parsed.transactions)){ toast('That file is not a valid backup'); e.target.value=''; return; }
-      const ok = await showConfirm('This will replace all current data in the app with this backup. Continue?', 'Restore');
-      if(!ok){ e.target.value=''; return; }
-      parsed.incomes = parsed.incomes || [];
-      parsed.recurring = parsed.recurring || [];
-      parsed.ious = parsed.ious || [];
-      parsed.people = parsed.people || [];
-      parsed.categories = parsed.categories && parsed.categories.length ? parsed.categories : [...DEFAULT_CATEGORIES];
-      parsed.cycles = parsed.cycles || {};
-      localStorage.setItem(STORE_KEY, JSON.stringify(parsed));
-      toast('Backup restored');
-      setTimeout(()=> location.reload(), 600);
+      await restoreFromObject(parsed);
+      e.target.value='';
     };
     reader.readAsText(file);
+  };
+
+  // ---------- GOOGLE DRIVE BACKUP (hidden appDataFolder, scope drive.appdata) ----------
+  const GD_FILE = 'ledger-backup.json';
+  let gdToken = null, gdExp = 0, gdBusy = false;
+  function gdLoadLib(){
+    return new Promise((res,rej)=>{
+      if(window.google && google.accounts && google.accounts.oauth2) return res();
+      const sc = document.createElement('script');
+      sc.src = 'https://accounts.google.com/gsi/client';
+      sc.onload = ()=> res();
+      sc.onerror = ()=> rej(new Error('Could not load Google sign-in — check your internet'));
+      document.head.appendChild(sc);
+    });
+  }
+  async function gdAuth(){
+    const cid = (localStorage.getItem(GD_KEY)||'').trim();
+    if(!cid) throw new Error('Paste your Google Client ID first');
+    if(gdToken && Date.now() < gdExp - 30000) return gdToken;
+    await gdLoadLib();
+    return new Promise((res,rej)=>{
+      const tc = google.accounts.oauth2.initTokenClient({
+        client_id: cid,
+        scope: 'https://www.googleapis.com/auth/drive.appdata',
+        callback: (r)=>{
+          if(r.error) return rej(new Error(r.error_description || r.error));
+          gdToken = r.access_token; gdExp = Date.now() + (Number(r.expires_in)||3600)*1000; res(gdToken);
+        },
+        error_callback: (e)=> rej(new Error(e && e.type==='popup_closed' ? 'Sign-in cancelled' : 'Google sign-in failed'))
+      });
+      tc.requestAccessToken();
+    });
+  }
+  async function gdFetch(url, opts){
+    const t = await gdAuth();
+    const r = await fetch(url, {...(opts||{}), headers:{...((opts&&opts.headers)||{}), Authorization:'Bearer '+t}});
+    if(r.status===401){ gdToken = null; throw new Error('Google session expired — try again'); }
+    if(!r.ok) throw new Error('Drive error ('+r.status+')');
+    return r;
+  }
+  async function gdFindFile(){
+    const q = encodeURIComponent("name='"+GD_FILE+"' and trashed=false");
+    const r = await gdFetch('https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q='+q+'&fields='+encodeURIComponent('files(id,modifiedTime)')+'&orderBy='+encodeURIComponent('modifiedTime desc'));
+    const j = await r.json();
+    return (j.files||[])[0] || null;
+  }
+  async function gdUpload(payload, existingId){
+    const bd = 'ledgerbnd'+Date.now();
+    const meta = existingId ? {} : {name:GD_FILE, parents:['appDataFolder']};
+    const body = '--'+bd+'\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n'+JSON.stringify(meta)+'\r\n--'+bd+'\r\nContent-Type: application/json\r\n\r\n'+payload+'\r\n--'+bd+'--';
+    const url = 'https://www.googleapis.com/upload/drive/v3/files'+(existingId?'/'+existingId:'')+'?uploadType=multipart&fields=id,modifiedTime';
+    const r = await gdFetch(url, {method: existingId?'PATCH':'POST', headers:{'Content-Type':'multipart/related; boundary='+bd}, body});
+    return r.json();
+  }
+  function gdWhen(iso){ const d=new Date(iso); return d.toLocaleDateString('en-IN',{day:'numeric',month:'short'})+' at '+d.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'}); }
+  function gdSetBusy(on){ gdBusy=on; ['gdBackupBtn','gdRestoreBtn'].forEach(id=>{ const b=document.getElementById(id); b.disabled=on; b.style.opacity=on?0.6:1; }); }
+  document.getElementById('gdClientId').onchange = (e)=>{ localStorage.setItem(GD_KEY, e.target.value.trim()); gdToken=null; };
+  document.getElementById('gdBackupBtn').onclick = async ()=>{
+    if(gdBusy) return;
+    localStorage.setItem(GD_KEY, document.getElementById('gdClientId').value.trim());
+    const st = document.getElementById('gdStatus');
+    gdSetBusy(true); st.textContent = 'Backing up…';
+    try{
+      data.lastBackupAt = new Date().toISOString(); save();
+      const f = await gdFindFile();
+      const res = await gdUpload(JSON.stringify(data), f && f.id);
+      st.textContent = 'Backed up to Drive ' + gdWhen(res.modifiedTime || data.lastBackupAt);
+      renderLastBackupLabel(); toast('Backed up to Google Drive');
+    }catch(err){ st.textContent = ''; toast(err.message || 'Backup failed'); }
+    gdSetBusy(false);
+  };
+  document.getElementById('gdRestoreBtn').onclick = async ()=>{
+    if(gdBusy) return;
+    localStorage.setItem(GD_KEY, document.getElementById('gdClientId').value.trim());
+    const st = document.getElementById('gdStatus');
+    gdSetBusy(true); st.textContent = 'Checking Drive…';
+    try{
+      const f = await gdFindFile();
+      if(!f){ st.textContent = 'No backup found on Drive yet'; gdSetBusy(false); return; }
+      const r = await gdFetch('https://www.googleapis.com/drive/v3/files/'+f.id+'?alt=media');
+      const parsed = await r.json();
+      st.textContent = 'Drive backup from ' + gdWhen(f.modifiedTime);
+      await restoreFromObject(parsed);
+    }catch(err){ st.textContent = ''; toast(err.message || 'Restore failed'); }
+    gdSetBusy(false);
   };
 
   // ---------- EXPORT ----------
