@@ -3418,8 +3418,17 @@
   function gdWhen(iso){ const d=new Date(iso); return d.toLocaleDateString('en-IN',{day:'numeric',month:'short'})+' at '+d.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'}); }
   function gdSetBusy(on){ gdBusy=on; ['gdBackupBtn','gdRestoreBtn'].forEach(id=>{ const b=document.getElementById(id); b.disabled=on; b.style.opacity=on?0.6:1; }); updateSyncUi(); }
   document.getElementById('gdClientId').onchange = (e)=>{ localStorage.setItem(GD_KEY, e.target.value.trim()); gdToken=null; localStorage.removeItem('ledger_gd_token'); localStorage.removeItem('ledger_gd_hint'); };
+  // Safety: never let an empty app overwrite a good backup in Drive.
+  function appIsEmpty(){
+    return ['accounts','transactions','incomes','recurring','ious','people','transfers'].every(k=> !(data[k] && data[k].length));
+  }
   async function gdBackupNow(){
     if(gdBusy) return;
+    if(appIsEmpty()){
+      document.getElementById('gdStatus').textContent = 'Nothing to back up — the app is empty';
+      toast('App is empty — use Restore from Drive to get your data back');
+      return;
+    }
     const cidEl = document.getElementById('gdClientId');
     if(document.getElementById('backupModalBg').classList.contains('show')) localStorage.setItem(GD_KEY, cidEl.value.trim());
     const st = document.getElementById('gdStatus');
@@ -3445,6 +3454,7 @@
   function updateSyncUi(){
     const btn = document.getElementById('syncBtn'), sub = document.getElementById('syncSub');
     if(!btn || !sub) return;
+    if(!gdBusy && appIsEmpty()){ sub.textContent=''; sub.style.display='none'; btn.classList.remove('dirty','spin'); btn.title='Nothing to sync yet'; return; }
     const at = localStorage.getItem('ledger_sync_at'), dirty = localStorage.getItem('ledger_sync_dirty')==='1';
     let txt, isDirty = false;
     if(gdBusy) txt = 'Syncing…';
